@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import { judge, judgeBatch, type SimplifiedQuestionInput } from "./client";
 import { resolveConfig } from "./config";
+import { startMcpServer } from "./mcp";
 import { runSetupWizard } from "./setup";
 import { gatePatch, reviewDiff } from "./tools/coding";
 
@@ -17,10 +18,10 @@ Fast, calibrated decision model runner for coding gating, diff reviews, research
   jev [options]                          Advanced structured judgment
 
 \x1b[1mSUBCOMMANDS:\x1b[0m
+  mcp                        Run as Model Context Protocol (MCP) JSON-RPC stdio server
   setup                      Interactive wizard to configure MCP for Claude Code, OMP, Cursor, or workspace
   review                     Evaluate git diff / patch (correctness, spec match, test gap, blast radius)
   gate                       Gating verification: diff review + developer claims vs evidence (Anti-Fake Done)
-\x1b[1mOPTIONS:\x1b[0m
   -s, --state <text>         State/content/code to evaluate
   -f, --file <path>          Read state from a file (e.g. diff, log, source)
   -q, --question <text>      Yes/No question to answer
@@ -73,7 +74,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const subCommand = args[0] === "review" || args[0] === "gate" || args[0] === "setup" ? args[0] : null;
+  const subCommand = args[0] === "review" || args[0] === "gate" || args[0] === "setup" || args[0] === "mcp" ? args[0] : null;
   const filteredArgs = subCommand ? args.slice(1) : args;
 
   let state: string | undefined;
@@ -152,6 +153,11 @@ async function main(): Promise<void> {
       positional.push(arg);
     }
   }
+  // Subcommand: mcp (runs as MCP server, takes ownership of stdin immediately)
+  if (subCommand === "mcp") {
+    await startMcpServer();
+    return;
+  }
 
   // Handle stdin
   if (useStdin || (!state && !filePath && positional.length === 0 && !process.stdin.isTTY)) {
@@ -175,7 +181,7 @@ async function main(): Promise<void> {
     timeoutMs: explicitTimeout,
     defaultThreshold: threshold,
   };
-  // Subcommand: setup
+
   if (subCommand === "setup") {
     let targetClient: any;
     let isGlobal = false;

@@ -7504,7 +7504,7 @@ async function handleRequest(req) {
   }
   sendError(id, -32601, `Method not found: ${method}`);
 }
-async function main() {
+async function startMcpServer() {
   const config = resolveConfig();
   console.error(`[jev-mcp] Server running · endpoint=${config.baseUrl || "(unconfigured)"} · model=${config.model || "(unconfigured)"} · tools=${allTools.length}`);
   let buffer = "";
@@ -7527,7 +7527,12 @@ async function main() {
     }
   }
 }
-main().catch((err) => {
-  console.error("[jev-mcp] Fatal error:", err);
-  process.exit(1);
-});
+if (process.argv[1]?.includes("mcp")) {
+  startMcpServer().catch((err) => {
+    console.error("[jev-mcp] Fatal error:", err);
+    process.exit(1);
+  });
+}
+export {
+  startMcpServer
+};

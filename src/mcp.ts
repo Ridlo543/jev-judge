@@ -118,7 +118,7 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
   sendError(id, -32601, `Method not found: ${method}`);
 }
 
-async function main(): Promise<void> {
+export async function startMcpServer(): Promise<void> {
   const config = resolveConfig();
   console.error(
     `[jev-mcp] Server running · endpoint=${config.baseUrl || "(unconfigured)"} · model=${config.model || "(unconfigured)"} · tools=${allTools.length}`,
@@ -146,7 +146,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error("[jev-mcp] Fatal error:", err);
-  process.exit(1);
-});
+if (process.argv[1]?.includes("mcp")) {
+  startMcpServer().catch((err) => {
+    console.error("[jev-mcp] Fatal error:", err);
+    process.exit(1);
+  });
+}
