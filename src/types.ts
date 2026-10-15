@@ -99,6 +99,10 @@ export interface JudgeResponse<TAnswers extends Answers = Answers> {
   probabilities: Record<string, number>;
   /** Parsed answers map directly from Jev */
   answers: TAnswers;
+  /** Normalized input questions preserving prompt instructions and criteria */
+  questions?: Questions;
+  /** Target state or document evaluated */
+  state?: JudgmentState;
   /** Full raw API response metadata */
   raw: JevJudgeResult;
 }

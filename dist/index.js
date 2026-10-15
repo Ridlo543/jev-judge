@@ -387,6 +387,8 @@ async function judge(state, questionInput, options = {}) {
     verdicts,
     probabilities,
     answers: result.answers,
+    questions,
+    state,
     raw: result
   };
 }

@@ -127,36 +127,69 @@ function requireConfig(explicit = {}) {
 }
 
 // src/formatter.ts
+function visualWidth(str) {
+  const stripped = str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
+  let width = 0;
+  for (const ch of stripped) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code >= 127744 && code <= 129791 || code >= 9728 && code <= 10175) {
+      width += 2;
+    } else {
+      width += 1;
+    }
+  }
+  return width;
+}
+function padCell(str, targetWidth, align = "left") {
+  const w = visualWidth(str);
+  const diff = Math.max(0, targetWidth - w);
+  if (align === "center") {
+    const left = Math.floor(diff / 2);
+    const right = diff - left;
+    return " ".repeat(left) + str + " ".repeat(right);
+  }
+  if (align === "right") {
+    return " ".repeat(diff) + str;
+  }
+  return str + " ".repeat(diff);
+}
 function renderTable(options) {
   const { columns, rows } = options;
   if (columns.length === 0 || rows.length === 0)
     return "";
-  const headerLine = `| ${columns.map((c) => c.header).join(" | ")} |`;
-  const separatorLine = `| ${columns.map((c) => {
+  const formattedRows = rows.map((row) => columns.map((_, i) => {
+    const val = row[i];
+    if (val === null || val === undefined)
+      return "—";
+    return escapeCell(String(val));
+  }));
+  const colWidths = columns.map((col, i) => {
+    const headerW = visualWidth(col.header);
+    const maxRowW = Math.max(0, ...formattedRows.map((r) => visualWidth(r[i] ?? "")));
+    return Math.max(headerW, maxRowW, 3);
+  });
+  const headerLine = `| ${columns.map((c, i) => padCell(c.header, colWidths[i], c.align || "left")).join(" | ")} |`;
+  const separatorLine = `| ${columns.map((c, i) => {
+    const w = colWidths[i];
     switch (c.align) {
       case "center":
-        return ":---:";
+        return `:${"-".repeat(Math.max(1, w - 2))}:`;
       case "right":
-        return "---:";
+        return `${"-".repeat(Math.max(2, w - 1))}:`;
       default:
-        return ":---";
+        return `:${"-".repeat(Math.max(2, w - 1))}`;
     }
   }).join(" | ")} |`;
-  const bodyLines = rows.map((row) => {
-    const cells = columns.map((_, i) => {
-      const val = row[i];
-      if (val === null || val === undefined)
-        return "—";
-      return escapeCell(String(val));
-    });
-    return `| ${cells.join(" | ")} |`;
-  });
+  const bodyLines = formattedRows.map((row) => `| ${row.map((cell, i) => padCell(cell, colWidths[i], columns[i].align || "left")).join(" | ")} |`);
   return [headerLine, separatorLine, ...bodyLines].join(`
 `);
 }
 function renderBadge(value) {
+  const noEmoji = process.env.NO_EMOJI === "1";
   if (typeof value === "boolean") {
-    return value ? "✅ true" : "\uD83D\uDED1 false";
+    if (noEmoji)
+      return value ? "[TRUE]" : "[FALSE]";
+    return value ? "✅ [TRUE]" : "\uD83D\uDED1 [FALSE]";
   }
   if (typeof value === "number") {
     if (value >= 0 && value <= 1) {
@@ -166,14 +199,24 @@ function renderBadge(value) {
   }
   const str = String(value ?? "").trim();
   const lower = str.toLowerCase();
+  const tag = str.toUpperCase();
   if (["auto", "allow", "pass", "ok", "verified", "supported", "same_fact", "answered"].includes(lower)) {
-    return `\uD83D\uDFE2 ${str.toUpperCase()}`;
+    if (noEmoji)
+      return `[${tag}]`;
+    const icon = lower === "allow" ? "\uD83D\uDEE1️" : lower === "verified" || lower === "ok" ? "✅" : "\uD83D\uDFE2";
+    return `${icon} [${tag}]`;
   }
   if (["escalate", "block", "contradicted", "wrong", "hallucinated", "unanswerable"].includes(lower)) {
-    return `\uD83D\uDED1 ${str.toUpperCase()}`;
+    if (noEmoji)
+      return `[${tag}]`;
+    const icon = lower === "contradicted" || lower === "wrong" ? "❌" : "\uD83D\uDED1";
+    return `${icon} [${tag}]`;
   }
   if (["review", "confirm", "unsupported", "uncertain", "missing", "different_facts"].includes(lower)) {
-    return `\uD83D\uDFE1 ${str.toUpperCase()}`;
+    if (noEmoji)
+      return `[${tag}]`;
+    const icon = lower === "confirm" || lower === "unsupported" ? "⚠️" : "\uD83D\uDFE1";
+    return `${icon} [${tag}]`;
   }
   return `\`${str}\``;
 }
@@ -203,6 +246,16 @@ function renderCard(card) {
   if (card.table && card.table.rows.length > 0) {
     lines.push(renderTable(card.table));
     lines.push("");
+  }
+  if (card.sections && card.sections.length > 0) {
+    for (const sec of card.sections) {
+      lines.push(`#### ${sec.title}`);
+      lines.push("");
+      for (const line of sec.lines) {
+        lines.push(line);
+      }
+      lines.push("");
+    }
   }
   if (card.footer) {
     const parts = [];
@@ -295,35 +348,125 @@ function formatJudgeResult(res) {
     return String(res);
   const verdict = res.verdict;
   const isBool = typeof verdict === "boolean";
-  const badge = isBool ? verdict ? "✅ TRUE" : "\uD83D\uDED1 FALSE" : `\uD83C\uDFAF ${String(verdict).toUpperCase()}`;
+  const badge = renderBadge(verdict);
   const probText = res.probability !== undefined ? `(${(res.probability * 100).toFixed(1)}% probability)` : res.confidence !== undefined ? `(${(res.confidence * 100).toFixed(1)}% confidence)` : "";
   const verdicts = res.verdicts && typeof res.verdicts === "object" ? res.verdicts : {};
   const keys = Object.keys(verdicts);
   let table;
   const details = [];
+  const sections = [];
+  const answers = res.answers && typeof res.answers === "object" ? res.answers : {};
   if (keys.length > 1) {
     table = {
       columns: [
         { header: "Question / Metric", align: "left" },
         { header: "Verdict", align: "center" },
-        { header: "Prob / Conf", align: "center" }
+        { header: "Conf / Score", align: "center" },
+        { header: "Meaning / Level", align: "left" }
       ],
       rows: keys.map((key) => {
         const v = verdicts[key];
         const p = res.probabilities?.[key];
+        const ans = answers[key];
         const pStr = p !== undefined ? `${(p * 100).toFixed(1)}%` : "—";
-        return [`**${key}**`, renderBadge(v), pStr];
+        let meaning = "—";
+        if (ans?.type === "score") {
+          const rounded = Math.round(ans.score);
+          const desc = ans.legend?.[String(rounded)] || ans.legend?.[rounded];
+          meaning = desc ? `${desc} (${ans.score.toFixed(2)})` : `${ans.score.toFixed(2)}`;
+        } else if (ans?.type === "choice" && ans.probabilities) {
+          const sorted = Object.entries(ans.probabilities).sort(([, a], [, b]) => b - a);
+          if (sorted.length > 1) {
+            meaning = `${(sorted[0][1] * 100).toFixed(0)}% vs ${(sorted[1][1] * 100).toFixed(0)}% runner-up`;
+          } else {
+            meaning = "Clear choice";
+          }
+        } else if (typeof v === "boolean") {
+          meaning = v ? "High confidence" : "Rejected";
+        }
+        return [`**${key}**`, renderBadge(v), pStr, meaning];
       })
     };
   } else if (keys.length === 1) {
     const key = keys[0];
-    details.push(`**Criterion:** \`${key}\``);
-    details.push(`**Verdict:** \`${String(verdicts[key])}\``);
-    if (res.probability !== undefined) {
-      details.push(`**Calibrated Probability:** ${(res.probability * 100).toFixed(1)}%`);
-    } else if (res.confidence !== undefined) {
-      details.push(`**Confidence Score:** ${(res.confidence * 100).toFixed(1)}%`);
+    const ans = answers[key];
+    const qObj = res.questions?.[key];
+    if (qObj?.instructions) {
+      details.push(`- **Prompt:** *"${escapeCell(qObj.instructions)}"*`);
     }
+    details.push(`- **Criterion:** \`${key}\``);
+    details.push(`- **Verdict:** \`${String(verdicts[key])}\``);
+    if (res.probability !== undefined) {
+      details.push(`- **Calibrated Probability:** ${(res.probability * 100).toFixed(1)}%`);
+    } else if (res.confidence !== undefined) {
+      details.push(`- **Confidence Score:** ${(res.confidence * 100).toFixed(1)}%`);
+    }
+    if (ans?.type === "score" && ans.legend) {
+      const legendStr = Object.entries(ans.legend).map(([lvl, desc]) => `${lvl}: ${desc}`).join(" → ");
+      details.push(`- **Scale Legend:** \`${legendStr}\``);
+    }
+  }
+  const breakdownLines = [];
+  for (const [key, ans] of Object.entries(answers)) {
+    if (!ans || typeof ans !== "object")
+      continue;
+    const answer = ans;
+    const qObj = res.questions?.[key];
+    breakdownLines.push(`- **${key}:**`);
+    if (qObj?.instructions) {
+      breakdownLines.push(`  - Prompt: *"${escapeCell(qObj.instructions)}"*`);
+    }
+    if (answer.type === "choice") {
+      breakdownLines.push(`  - Selected: **${answer.choice}** (Confidence: ${(answer.confidence * 100).toFixed(1)}%)`);
+      if (answer.probabilities && typeof answer.probabilities === "object") {
+        breakdownLines.push(`  - Candidate Probability Spread:`);
+        const sorted = Object.entries(answer.probabilities).sort(([, a], [, b]) => b - a);
+        for (const [opt, p] of sorted) {
+          const isWinner = opt === answer.choice ? " \uD83C\uDFC6 (Winner)" : "";
+          breakdownLines.push(`    * \`${opt}\`: **${(p * 100).toFixed(1)}%**${isWinner}`);
+        }
+      }
+    } else if (answer.type === "score") {
+      const maxScore = answer.legend ? Object.keys(answer.legend).length - 1 : undefined;
+      const scaleStr = maxScore !== undefined ? ` / ${maxScore}.0` : "";
+      const confStr = answer.confidence !== undefined ? `${(answer.confidence * 100).toFixed(1)}%` : "—";
+      breakdownLines.push(`  - Score: **\`${answer.score.toFixed(2)}\`${scaleStr}** (Confidence: ${confStr})`);
+      if (answer.legend && typeof answer.legend === "object") {
+        const legendStr = Object.entries(answer.legend).map(([lvl, desc]) => `${lvl}: ${desc}`).join(" → ");
+        breakdownLines.push(`  - Scale Legend: \`${legendStr}\``);
+      }
+      if (answer.probabilities && typeof answer.probabilities === "object") {
+        breakdownLines.push(`  - Rating Distribution:`);
+        const sorted = Object.entries(answer.probabilities).sort(([, a], [, b]) => b - a);
+        for (const [lvl, p] of sorted) {
+          const desc = answer.legend?.[lvl] ? ` (${answer.legend[lvl]})` : "";
+          breakdownLines.push(`    * Level ${lvl}${desc}: **${(p * 100).toFixed(1)}%**`);
+        }
+      }
+    } else if (answer.type === "noul") {
+      const prob = answer.noul !== undefined ? `${(answer.noul * 100).toFixed(1)}%` : "—";
+      const lbl = answer.noul >= 0.7 ? "Likely true" : answer.noul <= 0.3 ? "Unlikely" : "Uncertain";
+      if (qObj?.criteria && typeof qObj.criteria === "object") {
+        if (qObj.criteria.true || qObj.criteria.false) {
+          breakdownLines.push(`  - Evaluated Criteria:`);
+          if (qObj.criteria.true)
+            breakdownLines.push(`    * [TRUE]: *"${escapeCell(qObj.criteria.true)}"*`);
+          if (qObj.criteria.false)
+            breakdownLines.push(`    * [FALSE]: *"${escapeCell(qObj.criteria.false)}"*`);
+        }
+      }
+      breakdownLines.push(`  - Result: **${renderBadge(answer.noul >= 0.5)}** (Calibrated Probability: \`${prob}\` · ${lbl})`);
+    }
+  }
+  if (breakdownLines.length > 0) {
+    sections.push({
+      title: "Detailed Breakdown & Semantic Criteria",
+      lines: breakdownLines
+    });
+  }
+  if (res.state) {
+    const stateStr = typeof res.state === "string" ? res.state : JSON.stringify(res.state);
+    details.unshift(`- **Evaluated Subject:** *"${escapeCell(truncate(stateStr, 140))}"*`);
   }
   return renderCard({
     icon: "⚖️",
@@ -331,6 +474,7 @@ function formatJudgeResult(res) {
     badge: `${badge} ${probText}`.trim(),
     table,
     details: details.length > 0 ? details : undefined,
+    sections: sections.length > 0 ? sections : undefined,
     footer: {
       latencyMs: res.raw?.durationMs,
       model: res.raw?.model
@@ -479,12 +623,26 @@ function formatDecideResult(res) {
   if (Array.isArray(res?.warnings) && res.warnings.length > 0) {
     details.push(`*Warnings: ${res.warnings.join("; ")}*`);
   }
+  const sections = [];
+  if (rec?.probabilities && typeof rec.probabilities === "object") {
+    const probLines = [];
+    const sorted = Object.entries(rec.probabilities).sort(([, a], [, b]) => b - a);
+    for (const [cand, p] of sorted) {
+      const isWinner = cand === selected ? " \uD83C\uDFC6 (Winner)" : "";
+      probLines.push(`- \`${cand}\`: **${(p * 100).toFixed(1)}%**${isWinner}`);
+    }
+    sections.push({
+      title: "Candidate Probability Spread",
+      lines: probLines
+    });
+  }
   return renderCard({
     icon: "\uD83C\uDFAF",
     title: "Technical Decision",
     badge: `\`${selected}\` (${confidence} confidence)`,
     details,
-    table
+    table,
+    sections: sections.length > 0 ? sections : undefined
   });
 }
 function formatFindResult(res) {
@@ -931,6 +1089,8 @@ async function judge(state, questionInput, options = {}) {
     verdicts,
     probabilities,
     answers: result.answers,
+    questions,
+    state,
     raw: result
   };
 }

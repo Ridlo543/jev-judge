@@ -384,6 +384,8 @@ export async function judge<TAnswers extends Answers = Answers>(
     verdicts,
     probabilities,
     answers: result.answers as TAnswers,
+    questions,
+    state,
     raw: result,
   };
 }

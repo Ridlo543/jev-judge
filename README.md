@@ -30,10 +30,10 @@ Standard MCP servers often return raw JSON dumps that terminal interfaces format
 ```markdown
 ### ⚖️ Jev Judgment: ✅ TRUE (75.0% probability)
 
-| Question / Metric | Verdict | Prob / Conf |
-| :--- | :---: | :---: |
-| **is_clean_code** | ✅ true | 74.0% |
-| **quality_tier** | `production_ready` | 82.0% |
+| Question / Metric  |      Verdict       | Prob / Conf |
+| :----------------- | :----------------: | :---------: |
+| **is_clean_code**  |      ✅ true       |    74.0%    |
+| **quality_tier**   | `production_ready` |    82.0%    |
 
 ⏱️ *Latency: 1273ms · Model: opencode-free/jev-1.13-free*
 ```
@@ -45,12 +45,12 @@ Standard MCP servers often return raw JSON dumps that terminal interfaces format
 - **Safe to Apply:** `true`
 - **Decision Recommendation:** `auto`
 
-| Rubric Metric | Score (0..2) |
-| :--- | :---: |
-| **Correctness** | `1.80` |
-| **Spec Match** | `1.90` |
-| **Test Gap** | `0.20` |
-| **Blast Radius** | `0.30` |
+| Rubric Metric    | Score (0..2) |
+| :--------------- | :----------: |
+| **Correctness**  |    `1.80`    |
+| **Spec Match**   |    `1.90`    |
+| **Test Gap**     |    `0.20`    |
+| **Blast Radius** |    `0.30`    |
 ```
 
 ### `jev_gate` (Acceptance Verification)
@@ -79,10 +79,10 @@ Standard MCP servers often return raw JSON dumps that terminal interfaces format
 
 - **Status:** 🎯 DECIDED · Selected: **postgresql_partitioned**
 
-| Candidate | Requirement # | Status |
-| :--- | :---: | :---: |
-| **postgresql_partitioned** | Req 1 | 🟢 SUPPORTED |
-| **sqlite_in_memory** | Req 1 | 🛑 CONTRADICTED |
+| Candidate                  | Requirement # |     Status      |
+| :------------------------- | :-----------: | :-------------: |
+| **postgresql_partitioned** |     Req 1     |  🟢 SUPPORTED   |
+| **sqlite_in_memory**       |     Req 1     | 🛑 CONTRADICTED |
 ```
 
 ### `jev_verify` (Citation and Claim Verification)

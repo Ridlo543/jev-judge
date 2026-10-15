@@ -27,34 +27,82 @@ export interface TableOptions {
 }
 
 /**
- * Builds a clean, aligned Markdown table.
+ * Calculates visual display width of a string in monospace terminals.
+ * Emojis and full-width symbols occupy 2 terminal columns.
+ */
+function visualWidth(str: string): number {
+  const stripped = str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
+  let width = 0;
+  for (const ch of stripped) {
+    const code = ch.codePointAt(0) ?? 0;
+    if ((code >= 0x1f300 && code <= 0x1faff) || (code >= 0x2600 && code <= 0x27bf)) {
+      width += 2;
+    } else {
+      width += 1;
+    }
+  }
+  return width;
+}
+
+function padCell(str: string, targetWidth: number, align: "left" | "center" | "right" = "left"): string {
+  const w = visualWidth(str);
+  const diff = Math.max(0, targetWidth - w);
+  if (align === "center") {
+    const left = Math.floor(diff / 2);
+    const right = diff - left;
+    return " ".repeat(left) + str + " ".repeat(right);
+  }
+  if (align === "right") {
+    return " ".repeat(diff) + str;
+  }
+  return str + " ".repeat(diff);
+}
+
+/**
+ * Builds an aligned Markdown table with per-column padding for terminal TUI and CLI.
  */
 export function renderTable(options: TableOptions): string {
   const { columns, rows } = options;
   if (columns.length === 0 || rows.length === 0) return "";
 
-  const headerLine = `| ${columns.map((c) => c.header).join(" | ")} |`;
+  const formattedRows = rows.map((row) =>
+    columns.map((_, i) => {
+      const val = row[i];
+      if (val === null || val === undefined) return "—";
+      return escapeCell(String(val));
+    })
+  );
+
+  const colWidths = columns.map((col, i) => {
+    const headerW = visualWidth(col.header);
+    const maxRowW = Math.max(0, ...formattedRows.map((r) => visualWidth(r[i] ?? "")));
+    return Math.max(headerW, maxRowW, 3);
+  });
+
+  const headerLine = `| ${columns
+    .map((c, i) => padCell(c.header, colWidths[i], c.align || "left"))
+    .join(" | ")} |`;
+
   const separatorLine = `| ${columns
-    .map((c) => {
+    .map((c, i) => {
+      const w = colWidths[i];
       switch (c.align) {
         case "center":
-          return ":---:";
+          return `:${"-".repeat(Math.max(1, w - 2))}:`;
         case "right":
-          return "---:";
+          return `${"-".repeat(Math.max(2, w - 1))}:`;
         default:
-          return ":---";
+          return `:${"-".repeat(Math.max(2, w - 1))}`;
       }
     })
     .join(" | ")} |`;
 
-  const bodyLines = rows.map((row) => {
-    const cells = columns.map((_, i) => {
-      const val = row[i];
-      if (val === null || val === undefined) return "—";
-      return escapeCell(String(val));
-    });
-    return `| ${cells.join(" | ")} |`;
-  });
+  const bodyLines = formattedRows.map(
+    (row) =>
+      `| ${row
+        .map((cell, i) => padCell(cell, colWidths[i], columns[i].align || "left"))
+        .join(" | ")} |`
+  );
 
   return [headerLine, separatorLine, ...bodyLines].join("\n");
 }
@@ -64,8 +112,11 @@ export function renderTable(options: TableOptions): string {
  * Converts raw domain values into standardized visual badges without magic copy.
  */
 export function renderBadge(value: unknown): string {
+  const noEmoji = process.env.NO_EMOJI === "1";
+
   if (typeof value === "boolean") {
-    return value ? "✅ true" : "🛑 false";
+    if (noEmoji) return value ? "[TRUE]" : "[FALSE]";
+    return value ? "✅ [TRUE]" : "🛑 [FALSE]";
   }
 
   if (typeof value === "number") {
@@ -77,24 +128,36 @@ export function renderBadge(value: unknown): string {
 
   const str = String(value ?? "").trim();
   const lower = str.toLowerCase();
+  const tag = str.toUpperCase();
 
   // Success states
   if (["auto", "allow", "pass", "ok", "verified", "supported", "same_fact", "answered"].includes(lower)) {
-    return `🟢 ${str.toUpperCase()}`;
+    if (noEmoji) return `[${tag}]`;
+    const icon = lower === "allow" ? "🛡️" : lower === "verified" || lower === "ok" ? "✅" : "🟢";
+    return `${icon} [${tag}]`;
   }
 
   // Danger / Escalation states
   if (["escalate", "block", "contradicted", "wrong", "hallucinated", "unanswerable"].includes(lower)) {
-    return `🛑 ${str.toUpperCase()}`;
+    if (noEmoji) return `[${tag}]`;
+    const icon = lower === "contradicted" || lower === "wrong" ? "❌" : "🛑";
+    return `${icon} [${tag}]`;
   }
 
   // Warning / Review states
   if (["review", "confirm", "unsupported", "uncertain", "missing", "different_facts"].includes(lower)) {
-    return `🟡 ${str.toUpperCase()}`;
+    if (noEmoji) return `[${tag}]`;
+    const icon = lower === "confirm" || lower === "unsupported" ? "⚠️" : "🟡";
+    return `${icon} [${tag}]`;
   }
 
   // Neutral / Code label
   return `\`${str}\``;
+}
+
+export interface CardSection {
+  title: string;
+  lines: string[];
 }
 
 export interface CardOptions {
@@ -105,9 +168,9 @@ export interface CardOptions {
   table?: TableOptions;
   checklist?: Array<{ status: "verified" | "contradicted" | "unsupported" | string; text: string }>;
   details?: string[];
+  sections?: CardSection[];
   footer?: { latencyMs?: number; model?: string };
 }
-
 /**
  * Standardized Visual Card Renderer for Terminal TUI & Markdown.
  */
@@ -150,6 +213,18 @@ export function renderCard(card: CardOptions): string {
   if (card.table && card.table.rows.length > 0) {
     lines.push(renderTable(card.table));
     lines.push("");
+  }
+
+  // Structured Detail Sections
+  if (card.sections && card.sections.length > 0) {
+    for (const sec of card.sections) {
+      lines.push(`#### ${sec.title}`);
+      lines.push("");
+      for (const line of sec.lines) {
+        lines.push(line);
+      }
+      lines.push("");
+    }
   }
 
   // Subdued Execution Footer
@@ -272,11 +347,7 @@ function formatJudgeResult(res: any): string {
 
   const verdict = res.verdict;
   const isBool = typeof verdict === "boolean";
-  const badge = isBool
-    ? verdict
-      ? "✅ TRUE"
-      : "🛑 FALSE"
-    : `🎯 ${String(verdict).toUpperCase()}`;
+  const badge = renderBadge(verdict);
 
   const probText =
     res.probability !== undefined
@@ -290,30 +361,133 @@ function formatJudgeResult(res: any): string {
 
   let table: TableOptions | undefined;
   const details: string[] = [];
+  const sections: CardSection[] = [];
+  const answers = res.answers && typeof res.answers === "object" ? res.answers : {};
 
   if (keys.length > 1) {
     table = {
       columns: [
         { header: "Question / Metric", align: "left" },
         { header: "Verdict", align: "center" },
-        { header: "Prob / Conf", align: "center" },
+        { header: "Conf / Score", align: "center" },
+        { header: "Meaning / Level", align: "left" },
       ],
       rows: keys.map((key) => {
         const v = verdicts[key];
         const p = res.probabilities?.[key];
+        const ans = answers[key] as any;
         const pStr = p !== undefined ? `${(p * 100).toFixed(1)}%` : "—";
-        return [`**${key}**`, renderBadge(v), pStr];
+
+        let meaning = "—";
+        if (ans?.type === "score") {
+          const rounded = Math.round(ans.score);
+          const desc = ans.legend?.[String(rounded)] || ans.legend?.[rounded];
+          meaning = desc ? `${desc} (${ans.score.toFixed(2)})` : `${ans.score.toFixed(2)}`;
+        } else if (ans?.type === "choice" && ans.probabilities) {
+          const sorted = Object.entries(ans.probabilities as Record<string, number>).sort(([, a], [, b]) => b - a);
+          if (sorted.length > 1) {
+            meaning = `${(sorted[0][1] * 100).toFixed(0)}% vs ${(sorted[1][1] * 100).toFixed(0)}% runner-up`;
+          } else {
+            meaning = "Clear choice";
+          }
+        } else if (typeof v === "boolean") {
+          meaning = v ? "High confidence" : "Rejected";
+        }
+
+        return [`**${key}**`, renderBadge(v), pStr, meaning];
       }),
     };
   } else if (keys.length === 1) {
     const key = keys[0];
-    details.push(`**Criterion:** \`${key}\``);
-    details.push(`**Verdict:** \`${String(verdicts[key])}\``);
-    if (res.probability !== undefined) {
-      details.push(`**Calibrated Probability:** ${(res.probability * 100).toFixed(1)}%`);
-    } else if (res.confidence !== undefined) {
-      details.push(`**Confidence Score:** ${(res.confidence * 100).toFixed(1)}%`);
+    const ans = answers[key] as any;
+    const qObj = res.questions?.[key] as any;
+    if (qObj?.instructions) {
+      details.push(`- **Prompt:** *"${escapeCell(qObj.instructions)}"*`);
     }
+    details.push(`- **Criterion:** \`${key}\``);
+    details.push(`- **Verdict:** \`${String(verdicts[key])}\``);
+    if (res.probability !== undefined) {
+      details.push(`- **Calibrated Probability:** ${(res.probability * 100).toFixed(1)}%`);
+    } else if (res.confidence !== undefined) {
+      details.push(`- **Confidence Score:** ${(res.confidence * 100).toFixed(1)}%`);
+    }
+    if (ans?.type === "score" && ans.legend) {
+      const legendStr = Object.entries(ans.legend)
+        .map(([lvl, desc]) => `${lvl}: ${desc}`)
+        .join(" → ");
+      details.push(`- **Scale Legend:** \`${legendStr}\``);
+    }
+  }
+
+  // Detailed Distribution Breakdown (Zero Information Loss)
+  const breakdownLines: string[] = [];
+  for (const [key, ans] of Object.entries(answers)) {
+    if (!ans || typeof ans !== "object") continue;
+    const answer = ans as any;
+    const qObj = res.questions?.[key] as any;
+
+    breakdownLines.push(`- **${key}:**`);
+    if (qObj?.instructions) {
+      breakdownLines.push(`  - Prompt: *"${escapeCell(qObj.instructions)}"*`);
+    }
+
+    if (answer.type === "choice") {
+      breakdownLines.push(`  - Selected: **${answer.choice}** (Confidence: ${(answer.confidence * 100).toFixed(1)}%)`);
+      if (answer.probabilities && typeof answer.probabilities === "object") {
+        breakdownLines.push(`  - Candidate Probability Spread:`);
+        const sorted = Object.entries(answer.probabilities as Record<string, number>).sort(
+          ([, a], [, b]) => b - a
+        );
+        for (const [opt, p] of sorted) {
+          const isWinner = opt === answer.choice ? " 🏆 (Winner)" : "";
+          breakdownLines.push(`    * \`${opt}\`: **${(p * 100).toFixed(1)}%**${isWinner}`);
+        }
+      }
+    } else if (answer.type === "score") {
+      const maxScore = answer.legend ? Object.keys(answer.legend).length - 1 : undefined;
+      const scaleStr = maxScore !== undefined ? ` / ${maxScore}.0` : "";
+      const confStr = answer.confidence !== undefined ? `${(answer.confidence * 100).toFixed(1)}%` : "—";
+      breakdownLines.push(`  - Score: **\`${answer.score.toFixed(2)}\`${scaleStr}** (Confidence: ${confStr})`);
+      if (answer.legend && typeof answer.legend === "object") {
+        const legendStr = Object.entries(answer.legend)
+          .map(([lvl, desc]) => `${lvl}: ${desc}`)
+          .join(" → ");
+        breakdownLines.push(`  - Scale Legend: \`${legendStr}\``);
+      }
+      if (answer.probabilities && typeof answer.probabilities === "object") {
+        breakdownLines.push(`  - Rating Distribution:`);
+        const sorted = Object.entries(answer.probabilities as Record<string, number>).sort(
+          ([, a], [, b]) => b - a
+        );
+        for (const [lvl, p] of sorted) {
+          const desc = answer.legend?.[lvl] ? ` (${answer.legend[lvl]})` : "";
+          breakdownLines.push(`    * Level ${lvl}${desc}: **${(p * 100).toFixed(1)}%**`);
+        }
+      }
+    } else if (answer.type === "noul") {
+      const prob = answer.noul !== undefined ? `${(answer.noul * 100).toFixed(1)}%` : "—";
+      const lbl = answer.noul >= 0.7 ? "Likely true" : answer.noul <= 0.3 ? "Unlikely" : "Uncertain";
+      if (qObj?.criteria && typeof qObj.criteria === "object") {
+        if (qObj.criteria.true || qObj.criteria.false) {
+          breakdownLines.push(`  - Evaluated Criteria:`);
+          if (qObj.criteria.true) breakdownLines.push(`    * [TRUE]: *"${escapeCell(qObj.criteria.true)}"*`);
+          if (qObj.criteria.false) breakdownLines.push(`    * [FALSE]: *"${escapeCell(qObj.criteria.false)}"*`);
+        }
+      }
+      breakdownLines.push(`  - Result: **${renderBadge(answer.noul >= 0.5)}** (Calibrated Probability: \`${prob}\` · ${lbl})`);
+    }
+  }
+
+  if (breakdownLines.length > 0) {
+    sections.push({
+      title: "Detailed Breakdown & Semantic Criteria",
+      lines: breakdownLines,
+    });
+  }
+
+  if (res.state) {
+    const stateStr = typeof res.state === "string" ? res.state : JSON.stringify(res.state);
+    details.unshift(`- **Evaluated Subject:** *"${escapeCell(truncate(stateStr, 140))}"*`);
   }
 
   return renderCard({
@@ -322,6 +496,7 @@ function formatJudgeResult(res: any): string {
     badge: `${badge} ${probText}`.trim(),
     table,
     details: details.length > 0 ? details : undefined,
+    sections: sections.length > 0 ? sections : undefined,
     footer: {
       latencyMs: res.raw?.durationMs,
       model: res.raw?.model,
@@ -495,12 +670,29 @@ function formatDecideResult(res: any): string {
     details.push(`*Warnings: ${res.warnings.join("; ")}*`);
   }
 
+  const sections: CardSection[] = [];
+  if (rec?.probabilities && typeof rec.probabilities === "object") {
+    const probLines: string[] = [];
+    const sorted = Object.entries(rec.probabilities as Record<string, number>).sort(
+      ([, a], [, b]) => b - a
+    );
+    for (const [cand, p] of sorted) {
+      const isWinner = cand === selected ? " 🏆 (Winner)" : "";
+      probLines.push(`- \`${cand}\`: **${(p * 100).toFixed(1)}%**${isWinner}`);
+    }
+    sections.push({
+      title: "Candidate Probability Spread",
+      lines: probLines,
+    });
+  }
+
   return renderCard({
     icon: "🎯",
     title: "Technical Decision",
     badge: `\`${selected}\` (${confidence} confidence)`,
     details,
     table,
+    sections: sections.length > 0 ? sections : undefined,
   });
 }
 

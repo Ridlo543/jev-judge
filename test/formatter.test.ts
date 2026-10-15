@@ -31,7 +31,7 @@ describe("Universal Output Formatter", () => {
     expect(JSON.parse(jsonStr).verdict).toBe(true);
   });
 
-  it("formats jev_judge multi-question results into crisp Markdown table", () => {
+  it("formats jev_judge multi-question results into crisp Markdown table with detailed breakdowns", () => {
     const data = {
       verdict: true,
       probability: 0.75,
@@ -45,6 +45,34 @@ describe("Universal Output Formatter", () => {
         production_distribution: 0.8,
         overall_readiness: 0.72,
       },
+      answers: {
+        workflow_soundness: { type: "noul", noul: 0.75 },
+        production_distribution: {
+          type: "choice",
+          choice: "Dual: npm + GitHub",
+          confidence: 0.8,
+          probabilities: {
+            "Dual: npm + GitHub": 0.85,
+            "npm only": 0.15,
+          },
+        },
+        overall_readiness: {
+          type: "score",
+          score: 1.74,
+          confidence: 0.72,
+          legend: {
+            "0": "fragile",
+            "1": "viable",
+            "2": "production-grade",
+            "3": "benchmark",
+          },
+          probabilities: {
+            "2": 0.72,
+            "1": 0.27,
+            "3": 0.01,
+          },
+        },
+      },
       raw: {
         model: "opencode-free/jev-1.13-free",
         durationMs: 1363,
@@ -52,10 +80,11 @@ describe("Universal Output Formatter", () => {
     };
 
     const md = formatToolResult("jev_judge", data, "markdown");
-    expect(md).toContain("### ⚖️ Jev Judgment: ✅ TRUE");
-    expect(md).toContain("| Question / Metric | Verdict | Prob / Conf |");
-    expect(md).toContain("| **workflow_soundness** | ✅ true | 75.0% |");
-    expect(md).toContain("| **production_distribution** | `Dual: npm + GitHub` | 80.0% |");
+    expect(md).toContain("### ⚖️ Jev Judgment: ✅ [TRUE]");
+    expect(md).toContain("#### Detailed Breakdown & Semantic Criteria");
+    expect(md).toContain("**85.0%** 🏆 (Winner)");
+    expect(md).toContain("Scale Legend: `0: fragile → 1: viable → 2: production-grade → 3: benchmark`");
+    expect(md).toContain("Level 2 (production-grade): **72.0%**");
     expect(md).toContain("Latency: 1363ms");
     expect(md).toContain("opencode-free/jev-1.13-free");
   });
@@ -74,9 +103,9 @@ describe("Universal Output Formatter", () => {
     };
 
     const md = formatToolResult("jev_review", data, "markdown");
-    expect(md).toContain("### 🔍 Diff Review: 🟢 AUTO (Composite: 0.88 / 1.0)");
-    expect(md).toContain("| Rubric Metric | Score (0..2) |");
-    expect(md).toContain("| **Correctness** | `1.80` |");
+    expect(md).toContain("### 🔍 Diff Review: 🟢 [AUTO] (Composite: 0.88 / 1.0)");
+    expect(md).toContain("| Rubric Metric    | Score (0..2) |");
+    expect(md).toContain("| **Correctness**  |    `1.80`    |");
     expect(md).toContain("- **Safe to Apply:** `true`");
   });
 
@@ -93,7 +122,7 @@ describe("Universal Output Formatter", () => {
     };
 
     const md = formatToolResult("jev_gate", data, "markdown");
-    expect(md).toContain("### 🚪 Acceptance Gate: 🟢 AUTO (Diff Quality: 0.92)");
+    expect(md).toContain("### 🚪 Acceptance Gate: 🟢 [AUTO] (Diff Quality: 0.92)");
     expect(md).toContain("- ✅ **[VERIFIED]** Package version was incremented to 1.0.1");
     expect(md).toContain("- ✅ **[VERIFIED]** All unit tests pass");
   });
@@ -109,7 +138,7 @@ describe("Universal Output Formatter", () => {
     };
 
     const md = formatToolResult("jev_action_gate", data, "markdown");
-    expect(md).toContain("### 🛡️ Action Safety Gate: 🛑 BLOCK (Risk: 2.85 / 3.0)");
+    expect(md).toContain("### 🛡️ Action Safety Gate: 🛑 [BLOCK] (Risk: 2.85 / 3.0)");
     expect(md).toContain("- **Action/Command:** `rm -rf / --no-preserve-root`");
     expect(md).toContain("- **Destructive Operation:** `YES`");
     expect(md).toContain("Destructive root recursive deletion detected");
@@ -131,9 +160,9 @@ describe("Universal Output Formatter", () => {
 
     const md = formatToolResult("jev_decide", data, "markdown");
     expect(md).toContain("### 🎯 Technical Decision: `postgresql_partitioned` (92.0% confidence)");
-    expect(md).toContain("| Candidate | Requirement # | Status |");
-    expect(md).toContain("| **postgresql_partitioned** | Req 1 | 🟢 SUPPORTED |");
-    expect(md).toContain("| **sqlite_in_memory** | Req 1 | 🛑 CONTRADICTED |");
+    expect(md).toContain("| Candidate                  | Requirement # |      Status       |");
+    expect(md).toContain("| **postgresql_partitioned** |     Req 1     |  🟢 [SUPPORTED]   |");
+    expect(md).toContain("| **sqlite_in_memory**       |     Req 1     | ❌ [CONTRADICTED] |");
   });
 
   it("formats jev_verify with citation checklist", () => {
