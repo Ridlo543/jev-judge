@@ -1,0 +1,73 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build Standalone Binaries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x64
+            cli_out: jev-windows-x64.exe
+            mcp_out: jev-mcp-windows-x64.exe
+          - os: ubuntu-latest
+            target: linux-x64
+            cli_out: jev-linux-x64
+            mcp_out: jev-mcp-linux-x64
+          - os: macos-latest
+            target: darwin-arm64
+            cli_out: jev-darwin-arm64
+            mcp_out: jev-mcp-darwin-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run Tests
+        run: bun test
+
+      - name: Build Node Distribution
+        run: bun run build
+
+      - name: Compile Standalone Binaries
+        run: |
+          bun build --compile --outfile ${{ matrix.cli_out }} src/cli.ts
+          bun build --compile --outfile ${{ matrix.mcp_out }} src/mcp.ts
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: |
+            ${{ matrix.cli_out }}
+            ${{ matrix.mcp_out }}
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            binaries-*/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

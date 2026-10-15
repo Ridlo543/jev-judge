@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Jev Universal Decision Runner Configuration",
+  "protocol": "chat-completions",
+  "baseUrl": "https://your-api-endpoint.example.com/v1",
+  "apiKey": "your-api-key-here",
+  "model": "your-decision-model-id",
+  "timeoutMs": 20000,
+  "defaultThreshold": 0.5
+}

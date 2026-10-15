@@ -1,0 +1,36 @@
+# Credentials & sensitive environment files
+.env
+.env.*
+*.env
+jev.config.json
+
+# Local agent MCP configurations containing private keys
+.mcp.json
+.omp/mcp.json
+.cursor/mcp.json
+
+# Dependencies
+node_modules/
+bun.lockb
+
+# Local SQLite memory databases / caches
+.config/
+*.db
+*.db-shm
+*.db-wal
+
+# Compiled binaries (distributed via GitHub Releases)
+*.exe
+jev-windows-x64.exe
+jev-mcp-windows-x64.exe
+jev-linux-x64
+jev-mcp-linux-x64
+jev-darwin-arm64
+jev-mcp-darwin-arm64
+
+# Operating System & IDE artifacts
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/

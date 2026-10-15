@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "jev": {
+      "command": "npx",
+      "args": ["-y", "jev-judge", "mcp"],
+      "env": {
+        "JEV_BASE_URL": "https://api.openai.com/v1",
+        "JEV_API_KEY": "your-api-key-here",
+        "JEV_MODEL": "jev-latest"
+      }
+    }
+  }
+}

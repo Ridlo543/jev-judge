@@ -1,0 +1,101 @@
+import { describe, expect, it } from "bun:test";
+import {
+  judge,
+  judgeBatch,
+  judgeBool,
+  judgeChoice,
+  judgeScore,
+  normalizeQuestions,
+} from "../src/client";
+describe("jev-judge client", () => {
+  it("evaluates a simple yes/no question with calibrated probability", async () => {
+    const res = await judge("The user typed: echo hello world", "Is this a harmless echo command?");
+    expect(typeof res.verdict).toBe("boolean");
+    expect(res.verdict).toBe(true);
+    expect(res.probability).toBeGreaterThan(0.5);
+    expect(res.raw.model).toBeDefined();
+    expect(res.raw.durationMs).toBeGreaterThan(0);
+  });
+
+  it("evaluates multiple choice classification with confidence", async () => {
+    const res = await judge("SELECT * FROM users WHERE id = 1;", {
+      type: "choice",
+      instructions: "What programming language or query language is this?",
+      options: ["sql", "python", "rust", "html"],
+    });
+    expect(res.verdict).toBe("sql");
+    expect(res.confidence).toBeGreaterThan(0.5);
+    expect(res.answers.verdict.type).toBe("choice");
+  });
+
+  it("evaluates ordinal score rating", async () => {
+    const res = await judge("Refactor thousands of legacy COBOL banking routines into distributed microservices", {
+      type: "score",
+      instructions: "Rate the difficulty of this refactoring project",
+      levels: ["trivial", "moderate", "complex", "extreme"],
+    });
+    expect(typeof res.verdict).toBe("number");
+    expect(Number(res.verdict)).toBeGreaterThan(1.5);
+  });
+
+  it("handles batch evaluations concurrently", async () => {
+    const items = [
+      { id: "item-1", state: "fix small typo", question: "Is this simple?" },
+      { id: "item-2", state: "build an entire operating system kernel from scratch", question: "Is this simple?" },
+    ];
+
+    const results = await judgeBatch(items, { concurrency: 2 });
+    expect(results).toHaveLength(2);
+
+    const item1 = results.find((r) => r.id === "item-1");
+    const item2 = results.find((r) => r.id === "item-2");
+
+    expect(item1?.success).toBe(true);
+    expect(item1?.response?.verdict).toBe(true);
+    expect(item2?.success).toBe(true);
+    expect(item2?.response?.verdict).toBe(false);
+  });
+
+  it("evaluates multi-question criteria in a single round-trip", async () => {
+    const res = await judge("git reset --hard HEAD~1", {
+      is_dangerous: "Is this action dangerous?",
+      operation_type: {
+        type: "choice",
+        instructions: "What type of git operation is this?",
+        options: ["inspection", "reset_or_clean", "branch_creation"],
+      },
+      risk_score: {
+        type: "score",
+        instructions: "Rate the risk level",
+        levels: ["negligible", "low", "medium", "high", "critical"],
+      },
+    });
+
+    expect(res.verdicts.is_dangerous).toBe(true);
+    expect(res.verdicts.operation_type).toBe("reset_or_clean");
+    expect(typeof res.verdicts.risk_score).toBe("number");
+    expect(Number(res.verdicts.risk_score)).toBeGreaterThan(2);
+    expect(res.answers.is_dangerous.type).toBe("noul");
+    expect(res.answers.is_dangerous.bool).toBeDefined();
+  });
+
+  it("accepts string array and bool aliases without throwing", async () => {
+    const normalized = normalizeQuestions({
+      q_bool: { type: "bool", instructions: "Is this true?" },
+      q_shorthand: "Is this shorthand?",
+    });
+    expect(normalized.q_bool.type).toBe("noul");
+    expect(normalized.q_shorthand.type).toBe("noul");
+  });
+
+  it("works with convenience helper methods judgeBool, judgeChoice, judgeScore", async () => {
+    const [isHarmless, category, difficulty] = await Promise.all([
+      judgeBool("console.log('hi')", "Is this a simple logging statement?"),
+      judgeChoice("SELECT 1;", "What query language is this?", ["sql", "python", "css"]),
+      judgeScore("Print hello world in Python", "Rate difficulty", ["trivial", "hard"]),
+    ]);
+    expect(isHarmless).toBe(true);
+    expect(category).toBe("sql");
+    expect(difficulty).toBeLessThan(0.8);
+  }, 20_000);
+});
