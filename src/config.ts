@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 export type JevProtocol = "chat-completions" | "typesafe-direct";
+export type JevOutputFormat = "markdown" | "json";
 
 export interface JevResolvedConfig {
   protocol: JevProtocol;
@@ -10,6 +11,7 @@ export interface JevResolvedConfig {
   model: string;
   timeoutMs: number;
   defaultThreshold: number;
+  outputFormat: JevOutputFormat;
   source: "cli" | "config-file" | "env";
 }
 
@@ -20,8 +22,8 @@ export interface JevConfigInput {
   model?: string;
   timeoutMs?: number;
   defaultThreshold?: number;
+  outputFormat?: JevOutputFormat | string;
 }
-
 export const DEFAULT_PROTOCOL: JevProtocol = "chat-completions";
 export const DEFAULT_TIMEOUT_MS = 20_000;
 export const DEFAULT_THRESHOLD = 0.5;
@@ -171,6 +173,14 @@ export function resolveConfig(explicit: JevConfigInput = {}): JevResolvedConfig 
     explicit.defaultThreshold ??
     fileConfig.defaultThreshold ??
     DEFAULT_THRESHOLD;
+  // 6. Output format: markdown (default for human/TUI) or json
+  const rawFormat = (
+    explicit.outputFormat ||
+    fileConfig.outputFormat ||
+    env.JEV_OUTPUT_FORMAT ||
+    "markdown"
+  ).toLowerCase();
+  const outputFormat: JevOutputFormat = rawFormat === "json" ? "json" : "markdown";
 
   if (explicit.apiKey || explicit.baseUrl || explicit.model) {
     source = "cli";
@@ -187,6 +197,7 @@ export function resolveConfig(explicit: JevConfigInput = {}): JevResolvedConfig 
     model,
     timeoutMs,
     defaultThreshold,
+    outputFormat,
     source,
   };
 }

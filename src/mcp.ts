@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { resolveConfig } from "./config";
+import { formatToolResult } from "./formatter";
 import { allTools, toolsByName } from "./tools";
 import { validateToolCall } from "./tools/validation";
 
@@ -88,11 +89,13 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
 
     try {
       const output = await tool.handler(validation.data);
+      const config = resolveConfig();
+      const formatted = formatToolResult(name, output, config.outputFormat);
       sendResult(id, {
         content: [
           {
             type: "text",
-            text: typeof output === "string" ? output : JSON.stringify(output, null, 2),
+            text: formatted,
           },
         ],
       });

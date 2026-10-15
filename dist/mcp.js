@@ -92,6 +92,8 @@ function resolveConfig(explicit = {}) {
   const rawTimeout = env.JEV_TIMEOUT_MS || env.OPENAI_TIMEOUT_MS;
   const timeoutMs = explicit.timeoutMs ?? fileConfig.timeoutMs ?? (rawTimeout ? Number.parseInt(rawTimeout, 10) : DEFAULT_TIMEOUT_MS);
   const defaultThreshold = explicit.defaultThreshold ?? fileConfig.defaultThreshold ?? DEFAULT_THRESHOLD;
+  const rawFormat = (explicit.outputFormat || fileConfig.outputFormat || env.JEV_OUTPUT_FORMAT || "markdown").toLowerCase();
+  const outputFormat = rawFormat === "json" ? "json" : "markdown";
   if (explicit.apiKey || explicit.baseUrl || explicit.model) {
     source = "cli";
   } else if (fileConfig.apiKey || fileConfig.baseUrl || fileConfig.model) {
@@ -106,6 +108,7 @@ function resolveConfig(explicit = {}) {
     model,
     timeoutMs,
     defaultThreshold,
+    outputFormat,
     source
   };
 }
@@ -121,6 +124,547 @@ function requireConfig(explicit = {}) {
     throw new Error("Missing Jev Model. Please configure it manually in your MCP config (env.JEV_MODEL or env.OPENAI_MODEL), in jev.config.json, or pass --model.");
   }
   return config;
+}
+
+// src/formatter.ts
+function renderTable(options) {
+  const { columns, rows } = options;
+  if (columns.length === 0 || rows.length === 0)
+    return "";
+  const headerLine = `| ${columns.map((c) => c.header).join(" | ")} |`;
+  const separatorLine = `| ${columns.map((c) => {
+    switch (c.align) {
+      case "center":
+        return ":---:";
+      case "right":
+        return "---:";
+      default:
+        return ":---";
+    }
+  }).join(" | ")} |`;
+  const bodyLines = rows.map((row) => {
+    const cells = columns.map((_, i) => {
+      const val = row[i];
+      if (val === null || val === undefined)
+        return "—";
+      return escapeCell(String(val));
+    });
+    return `| ${cells.join(" | ")} |`;
+  });
+  return [headerLine, separatorLine, ...bodyLines].join(`
+`);
+}
+function renderBadge(value) {
+  if (typeof value === "boolean") {
+    return value ? "✅ true" : "\uD83D\uDED1 false";
+  }
+  if (typeof value === "number") {
+    if (value >= 0 && value <= 1) {
+      return `${(value * 100).toFixed(1)}%`;
+    }
+    return value.toFixed(2);
+  }
+  const str = String(value ?? "").trim();
+  const lower = str.toLowerCase();
+  if (["auto", "allow", "pass", "ok", "verified", "supported", "same_fact", "answered"].includes(lower)) {
+    return `\uD83D\uDFE2 ${str.toUpperCase()}`;
+  }
+  if (["escalate", "block", "contradicted", "wrong", "hallucinated", "unanswerable"].includes(lower)) {
+    return `\uD83D\uDED1 ${str.toUpperCase()}`;
+  }
+  if (["review", "confirm", "unsupported", "uncertain", "missing", "different_facts"].includes(lower)) {
+    return `\uD83D\uDFE1 ${str.toUpperCase()}`;
+  }
+  return `\`${str}\``;
+}
+function renderCard(card) {
+  const lines = [];
+  const badgePart = card.badge ? `: ${card.badge}` : "";
+  lines.push(`### ${card.icon} ${card.title}${badgePart}`.trim());
+  if (card.summary && card.summary.length > 0) {
+    const summaryParts = card.summary.map((s) => `**${s.label}:** ${typeof s.value === "boolean" ? s.value ? "`true`" : "`false`" : s.value}`);
+    lines.push(summaryParts.join(" · "));
+  }
+  lines.push("");
+  if (card.details && card.details.length > 0) {
+    for (const d of card.details) {
+      lines.push(d.startsWith("-") ? d : `- ${d}`);
+    }
+    lines.push("");
+  }
+  if (card.checklist && card.checklist.length > 0) {
+    for (const item of card.checklist) {
+      const lower = item.status.toLowerCase();
+      const icon = lower === "verified" || lower === "ok" || lower === "supported" ? "✅" : lower === "contradicted" || lower === "wrong" ? "❌" : "⚠️";
+      lines.push(`- ${icon} **[${item.status.toUpperCase()}]** ${item.text}`);
+    }
+    lines.push("");
+  }
+  if (card.table && card.table.rows.length > 0) {
+    lines.push(renderTable(card.table));
+    lines.push("");
+  }
+  if (card.footer) {
+    const parts = [];
+    if (card.footer.latencyMs !== undefined)
+      parts.push(`Latency: ${card.footer.latencyMs}ms`);
+    if (card.footer.model)
+      parts.push(`Model: ${card.footer.model}`);
+    if (parts.length > 0) {
+      lines.push(`⏱️ *${parts.join(" · ")}*`);
+    }
+  }
+  return lines.join(`
+`).trim();
+}
+function stripInternalMetadata(obj) {
+  if (obj === null || typeof obj !== "object")
+    return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(stripInternalMetadata);
+  }
+  const record = { ...obj };
+  if (record.raw && typeof record.raw === "object") {
+    const rawObj = { ...record.raw };
+    delete rawObj.answers;
+    record.raw = rawObj;
+  }
+  delete record._meta;
+  for (const [key, val] of Object.entries(record)) {
+    if (typeof val === "object" && val !== null) {
+      record[key] = stripInternalMetadata(val);
+    }
+  }
+  return record;
+}
+function formatToolResult(toolName, data, format = "markdown") {
+  if (format === "json") {
+    const cleaned = stripInternalMetadata(data);
+    return JSON.stringify(cleaned, null, 2);
+  }
+  try {
+    switch (toolName) {
+      case "jev_judge":
+        return formatJudgeResult(data);
+      case "jev_judge_batch":
+        return formatBatchJudgeResult(data);
+      case "jev_noul":
+        return formatNoulResult(data);
+      case "jev_review":
+      case "jev_review_patch":
+        return formatReviewResult(data);
+      case "jev_gate":
+      case "jev_gate_acceptance":
+        return formatGateResult(data);
+      case "jev_action_gate":
+      case "jev_gate_command":
+        return formatActionGateResult(data);
+      case "jev_decide":
+      case "jev_arbitrate_decision":
+        return formatDecideResult(data);
+      case "jev_find":
+      case "jev_semantic_select":
+        return formatFindResult(data);
+      case "jev_rerank":
+      case "jev_rank_relevance":
+        return formatRerankResult(data);
+      case "jev_compare":
+      case "jev_compare_passages":
+        return formatCompareResult(data);
+      case "jev_verify":
+      case "jev_fact_check_citations":
+        return formatVerifyResult(data);
+      case "jev_screen":
+      case "jev_screen_prompt_injection":
+        return formatScreenResult(data);
+      case "jev_extract":
+      case "jev_extract_verbatim_regex":
+        return formatExtractResult(data);
+      case "jev_audit":
+      case "jev_audit_extracted_records":
+        return formatAuditResult(data);
+      default:
+        return formatGenericResult(toolName, data);
+    }
+  } catch {
+    return JSON.stringify(stripInternalMetadata(data), null, 2);
+  }
+}
+function formatJudgeResult(res) {
+  if (!res || typeof res !== "object")
+    return String(res);
+  const verdict = res.verdict;
+  const isBool = typeof verdict === "boolean";
+  const badge = isBool ? verdict ? "✅ TRUE" : "\uD83D\uDED1 FALSE" : `\uD83C\uDFAF ${String(verdict).toUpperCase()}`;
+  const probText = res.probability !== undefined ? `(${(res.probability * 100).toFixed(1)}% probability)` : res.confidence !== undefined ? `(${(res.confidence * 100).toFixed(1)}% confidence)` : "";
+  const verdicts = res.verdicts && typeof res.verdicts === "object" ? res.verdicts : {};
+  const keys = Object.keys(verdicts);
+  let table;
+  const details = [];
+  if (keys.length > 1) {
+    table = {
+      columns: [
+        { header: "Question / Metric", align: "left" },
+        { header: "Verdict", align: "center" },
+        { header: "Prob / Conf", align: "center" }
+      ],
+      rows: keys.map((key) => {
+        const v = verdicts[key];
+        const p = res.probabilities?.[key];
+        const pStr = p !== undefined ? `${(p * 100).toFixed(1)}%` : "—";
+        return [`**${key}**`, renderBadge(v), pStr];
+      })
+    };
+  } else if (keys.length === 1) {
+    const key = keys[0];
+    details.push(`**Criterion:** \`${key}\``);
+    details.push(`**Verdict:** \`${String(verdicts[key])}\``);
+    if (res.probability !== undefined) {
+      details.push(`**Calibrated Probability:** ${(res.probability * 100).toFixed(1)}%`);
+    } else if (res.confidence !== undefined) {
+      details.push(`**Confidence Score:** ${(res.confidence * 100).toFixed(1)}%`);
+    }
+  }
+  return renderCard({
+    icon: "⚖️",
+    title: "Jev Judgment",
+    badge: `${badge} ${probText}`.trim(),
+    table,
+    details: details.length > 0 ? details : undefined,
+    footer: {
+      latencyMs: res.raw?.durationMs,
+      model: res.raw?.model
+    }
+  });
+}
+function formatBatchJudgeResult(res) {
+  if (!Array.isArray(res))
+    return formatGenericResult("jev_judge_batch", res);
+  const total = res.length;
+  const successful = res.filter((item) => item.success).length;
+  return renderCard({
+    icon: "⚖️",
+    title: "Jev Batch Judgment",
+    badge: `${successful}/${total} Succeeded`,
+    table: {
+      columns: [
+        { header: "ID", align: "left" },
+        { header: "Verdict", align: "center" },
+        { header: "Prob / Conf", align: "center" },
+        { header: "Status", align: "center" }
+      ],
+      rows: res.map((item) => {
+        const id = item.id || "—";
+        if (!item.success) {
+          return [`**${id}**`, "—", "—", `❌ ${item.error || "Failed"}`];
+        }
+        const r = item.response;
+        const v = r?.verdict;
+        const p = r?.probability ?? r?.confidence;
+        const pStr = p !== undefined ? `${(p * 100).toFixed(1)}%` : "—";
+        return [`**${id}**`, renderBadge(v), pStr, "✅ OK"];
+      })
+    }
+  });
+}
+function formatNoulResult(res) {
+  const results = Array.isArray(res?.results) ? res.results : [];
+  return renderCard({
+    icon: "\uD83C\uDFB2",
+    title: "Jev Probability Calibration",
+    badge: `${results.length} Proposition(s)`,
+    table: {
+      columns: [
+        { header: "Proposition", align: "left" },
+        { header: "Probability", align: "center" },
+        { header: "Likelihood", align: "center" }
+      ],
+      rows: results.map((item) => {
+        const prob = typeof item.probability === "number" ? `${(item.probability * 100).toFixed(1)}%` : "—";
+        const label = item.label || (item.probability >= 0.7 ? "likely" : item.probability <= 0.3 ? "unlikely" : "uncertain");
+        return [item.proposition || "—", `**${prob}**`, renderBadge(label)];
+      })
+    }
+  });
+}
+function formatReviewResult(res) {
+  const action = (res?.action || "review").toUpperCase();
+  const badge = renderBadge(res?.action || "review");
+  const composite = typeof res?.composite === "number" ? res.composite.toFixed(2) : "—";
+  const scores = res?.scores || {};
+  const scoreKeys = Object.keys(scores);
+  const table = scoreKeys.length > 0 ? {
+    columns: [
+      { header: "Rubric Metric", align: "left" },
+      { header: "Score (0..2)", align: "center" }
+    ],
+    rows: scoreKeys.map((k) => {
+      const val = scores[k];
+      const num = typeof val === "number" ? val.toFixed(2) : String(val);
+      const label = k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      return [`**${label}**`, `\`${num}\``];
+    })
+  } : undefined;
+  return renderCard({
+    icon: "\uD83D\uDD0D",
+    title: "Diff Review",
+    badge: `${badge} (Composite: ${composite} / 1.0)`,
+    details: [
+      `**Safe to Apply:** \`${res?.safe_to_apply ? "true" : "false"}\``,
+      `**Decision Recommendation:** \`${action.toLowerCase()}\``
+    ],
+    table
+  });
+}
+function formatGateResult(res) {
+  const badge = renderBadge(res?.action || "review");
+  const composite = typeof res?.composite === "number" ? res.composite.toFixed(2) : "—";
+  const claims = Array.isArray(res?.claims) ? res.claims : [];
+  const verifiedCount = claims.filter((c) => c.verdict === "verified").length;
+  const contradictedCount = res?.contradicted_count ?? claims.filter((c) => c.verdict === "contradicted").length;
+  return renderCard({
+    icon: "\uD83D\uDEAA",
+    title: "Acceptance Gate",
+    badge: `${badge} (Diff Quality: ${composite})`,
+    summary: [
+      { label: "Claims Audit", value: `${verifiedCount}/${claims.length} Verified` },
+      { label: "Contradicted", value: contradictedCount },
+      { label: "All Verified", value: res?.all_claims_verified ? "YES" : "NO" }
+    ],
+    checklist: claims.map((c) => ({
+      status: c.verdict || "unsupported",
+      text: c.claim
+    }))
+  });
+}
+function formatActionGateResult(res) {
+  const rec = (res?.recommendation || "confirm").toUpperCase();
+  const badge = renderBadge(res?.recommendation || "confirm");
+  const risk = typeof res?.risk_score === "number" ? res.risk_score.toFixed(2) : "—";
+  const details = [
+    `**Action/Command:** \`${res?.action || "unknown"}\``,
+    `**Recommendation:** **${rec}**`,
+    `**Destructive Operation:** \`${res?.is_destructive ? "YES" : "NO"}\``,
+    `**Requires Human Escalation:** \`${res?.requires_escalation ? "YES" : "NO"}\``
+  ];
+  if (res?.reasoning) {
+    details.push(`**Safety Analysis:** ${res.reasoning}`);
+  }
+  return renderCard({
+    icon: "\uD83D\uDEE1️",
+    title: "Action Safety Gate",
+    badge: `${badge} (Risk: ${risk} / 3.0)`,
+    details
+  });
+}
+function formatDecideResult(res) {
+  const rec = res?.recommendation;
+  const selected = rec?.selected || "none";
+  const confidence = typeof rec?.confidence === "number" ? `${(rec.confidence * 100).toFixed(1)}%` : "—";
+  const escaped = rec?.escaped ? "⚠️ ESCAPED" : "\uD83C\uDFAF DECIDED";
+  const checks = Array.isArray(res?.checks) ? res.checks : [];
+  const table = checks.length > 0 ? {
+    columns: [
+      { header: "Candidate", align: "left" },
+      { header: "Requirement #", align: "center" },
+      { header: "Status", align: "center" }
+    ],
+    rows: checks.map((ch) => [
+      `**${ch.candidate}**`,
+      `Req ${ch.requirement}`,
+      renderBadge(ch.status)
+    ])
+  } : undefined;
+  const details = [`**Status:** ${escaped} · Selected: **${selected}**`];
+  if (Array.isArray(res?.warnings) && res.warnings.length > 0) {
+    details.push(`*Warnings: ${res.warnings.join("; ")}*`);
+  }
+  return renderCard({
+    icon: "\uD83C\uDFAF",
+    title: "Technical Decision",
+    badge: `\`${selected}\` (${confidence} confidence)`,
+    details,
+    table
+  });
+}
+function formatFindResult(res) {
+  const top = Array.isArray(res?.top) ? res.top : [];
+  const verdict = res?.exists_verdict || (res?.exists >= (res?.threshold ?? 0.5) ? "answered" : "unanswerable");
+  const existsScore = typeof res?.exists === "number" ? `${(res.exists * 100).toFixed(1)}%` : "—";
+  return renderCard({
+    icon: "\uD83D\uDD0E",
+    title: "Semantic Find",
+    badge: `\`${top[0]?.id || "None"}\` (Verdict: ${verdict.toUpperCase()})`,
+    summary: [
+      { label: "Answerability", value: existsScore },
+      { label: "Matches", value: top.length }
+    ],
+    table: {
+      columns: [
+        { header: "Rank", align: "center" },
+        { header: "Candidate ID", align: "left" },
+        { header: "Score", align: "center" },
+        { header: "Content Snippet", align: "left" }
+      ],
+      rows: top.map((item, idx) => {
+        const score = typeof item.score === "number" ? `${(item.score * 100).toFixed(1)}%` : "—";
+        const snippet = item.text ? truncate(item.text, 60) : "—";
+        return [`#${idx + 1}`, `**${item.id}**`, score, snippet];
+      })
+    }
+  });
+}
+function formatRerankResult(res) {
+  const ranked = Array.isArray(res?.ranked) ? res.ranked : [];
+  return renderCard({
+    icon: "\uD83D\uDCCA",
+    title: "Relevance Rerank",
+    badge: `Top ${ranked.length} Candidates`,
+    table: {
+      columns: [
+        { header: "Rank", align: "center" },
+        { header: "Candidate ID", align: "left" },
+        { header: "Relevance", align: "center" },
+        { header: "Content Preview", align: "left" }
+      ],
+      rows: ranked.map((item, idx) => {
+        const rank = item.rank ?? idx + 1;
+        const rel = typeof item.relevance === "number" ? `${(item.relevance * 100).toFixed(1)}%` : "—";
+        const preview = item.text ? truncate(item.text, 60) : "—";
+        return [`#${rank}`, `**${item.id}**`, rel, preview];
+      })
+    }
+  });
+}
+function formatCompareResult(res) {
+  const rel = res?.relation || "different_facts";
+  const badge = renderBadge(rel);
+  const conf = typeof res?.confidence === "number" ? `${(res.confidence * 100).toFixed(1)}%` : "—";
+  const aspects = res?.aspects && typeof res.aspects === "object" ? res.aspects : {};
+  const aspectKeys = Object.keys(aspects);
+  const table = aspectKeys.length > 0 ? {
+    columns: [
+      { header: "Aspect", align: "left" },
+      { header: "Relation", align: "center" },
+      { header: "Confidence", align: "center" }
+    ],
+    rows: aspectKeys.map((key) => {
+      const a = aspects[key];
+      const aConf = typeof a.confidence === "number" ? `${(a.confidence * 100).toFixed(1)}%` : "—";
+      return [`**${key}**`, renderBadge(a.relation), aConf];
+    })
+  } : undefined;
+  return renderCard({
+    icon: "⚖️",
+    title: "Passage Comparison",
+    badge: `${badge} (${conf} confidence)`,
+    details: aspectKeys.length === 0 ? [`**Overall Relation:** \`${rel}\``, `**Calibrated Confidence:** ${conf}`] : undefined,
+    table
+  });
+}
+function formatVerifyResult(res) {
+  const summary = res?.summary || {};
+  const verified = summary.verified ?? 0;
+  const contradicted = summary.contradicted ?? 0;
+  const unsupported = summary.unsupported ?? 0;
+  const claims = Array.isArray(res?.claims) ? res.claims : [];
+  return renderCard({
+    icon: "\uD83D\uDCCB",
+    title: "Citation Verification",
+    badge: `${verified} Verified · ${contradicted} Contradicted · ${unsupported} Unsupported`,
+    checklist: claims.map((c) => ({
+      status: c.verdict || c.relation_verdict || "unsupported",
+      text: c.claim
+    }))
+  });
+}
+function formatScreenResult(res) {
+  const badge = renderBadge(res?.recommendation?.action || "review");
+  const probs = res?.probabilities || {};
+  const probKeys = Object.keys(probs);
+  const table = probKeys.length > 0 ? {
+    columns: [
+      { header: "Security Metric", align: "left" },
+      { header: "Probability", align: "center" }
+    ],
+    rows: probKeys.map((k) => {
+      const p = probs[k];
+      const pStr = typeof p === "number" ? `${(p * 100).toFixed(1)}%` : String(p);
+      const label = k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      return [`**${label}**`, pStr];
+    })
+  } : undefined;
+  return renderCard({
+    icon: "\uD83D\uDEE1️",
+    title: "Text Screen",
+    badge,
+    table
+  });
+}
+function formatExtractResult(res) {
+  const results = res?.results && typeof res.results === "object" ? res.results : {};
+  const keys = Object.keys(results);
+  return renderCard({
+    icon: "\uD83D\uDCDD",
+    title: "Verbatim Field Extraction",
+    badge: `${keys.length} Field(s)`,
+    table: {
+      columns: [
+        { header: "Field ID", align: "left" },
+        { header: "Extracted Value", align: "left" },
+        { header: "Status", align: "center" }
+      ],
+      rows: keys.map((key) => {
+        const f = results[key];
+        const val = f?.value ? `\`${f.value}\`` : "—";
+        return [`**${key}**`, val, renderBadge(f?.status || "auto")];
+      })
+    }
+  });
+}
+function formatAuditResult(res) {
+  const badge = renderBadge(res?.action || "review");
+  const records = Array.isArray(res?.records) ? res.records : [];
+  return renderCard({
+    icon: "\uD83D\uDD0D",
+    title: "Extraction Audit",
+    badge: `${badge} (${records.length} Records)`,
+    table: {
+      columns: [
+        { header: "Record ID", align: "left" },
+        { header: "Audit Action", align: "center" },
+        { header: "Extracted Value", align: "left" }
+      ],
+      rows: records.map((r) => {
+        const val = r.value ? `\`${r.value}\`` : "—";
+        return [`**${r.id || "—"}**`, renderBadge(r.action || "ok"), val];
+      })
+    }
+  });
+}
+function formatGenericResult(name, data) {
+  if (data === null || data === undefined) {
+    return `### \uD83D\uDD27 ${name}
+
+*No output returned.*`;
+  }
+  if (typeof data === "string") {
+    return `### \uD83D\uDD27 ${name}
+
+${data}`;
+  }
+  const cleaned = stripInternalMetadata(data);
+  return `### \uD83D\uDD27 ${name}
+
+\`\`\`json
+${JSON.stringify(cleaned, null, 2)}
+\`\`\``;
+}
+function escapeCell(str) {
+  return str.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+function truncate(str, maxLen) {
+  return str.length > maxLen ? `${str.slice(0, maxLen - 3)}...` : str;
 }
 
 // src/client.ts
@@ -454,7 +998,7 @@ var REVIEW_WEIGHTS = {
   test_gap: 0.15,
   blast_radius: 0.15
 };
-function truncate(text, maxChars) {
+function truncate2(text, maxChars) {
   if (text.length <= maxChars)
     return { text, truncated: false };
   return { text: `${text.slice(0, maxChars)} […truncated]`, truncated: true };
@@ -478,9 +1022,9 @@ function reviewAction(input) {
   return "review";
 }
 async function reviewDiff(input, context) {
-  const diffTrunc = truncate(input.diff, MAX_DOC_CHARS);
-  const reqTrunc = truncate(input.request, MAX_DOC_CHARS);
-  const testsTrunc = input.tests ? truncate(input.tests, MAX_DOC_CHARS) : undefined;
+  const diffTrunc = truncate2(input.diff, MAX_DOC_CHARS);
+  const reqTrunc = truncate2(input.request, MAX_DOC_CHARS);
+  const testsTrunc = input.tests ? truncate2(input.tests, MAX_DOC_CHARS) : undefined;
   const isTruncated = diffTrunc.truncated || reqTrunc.truncated || (testsTrunc?.truncated ?? false);
   const autoAccept = input.auto_accept ?? 0.8;
   const reviewAt = input.review_at ?? Math.min(0.5, autoAccept);
@@ -568,16 +1112,16 @@ ${testsTrunc.text}`;
 }
 async function gatePatch(input, context) {
   const reviewRes = await reviewDiff(input, context);
-  const claims = (input.claims || []).slice(0, MAX_CLAIMS).map((c) => truncate(c, MAX_CLAIM_CHARS).text);
+  const claims = (input.claims || []).slice(0, MAX_CLAIMS).map((c) => truncate2(c, MAX_CLAIM_CHARS).text);
   let evidenceText = "";
   if (typeof input.evidence === "string") {
-    evidenceText = truncate(input.evidence, MAX_EVIDENCE_CHARS).text;
+    evidenceText = truncate2(input.evidence, MAX_EVIDENCE_CHARS).text;
   } else if (Array.isArray(input.evidence)) {
     evidenceText = input.evidence.map((item, idx) => `[Evidence ${item.id ?? idx + 1}]:
 ${item.text}`).join(`
 
 `);
-    evidenceText = truncate(evidenceText, MAX_EVIDENCE_CHARS).text;
+    evidenceText = truncate2(evidenceText, MAX_EVIDENCE_CHARS).text;
   }
   if (claims.length === 0) {
     return {
@@ -785,7 +1329,7 @@ var SUBJECT_CRITERIA = {
   false: "The evidence is silent about it, or reports only on a different check, run, process, or object"
 };
 async function verifyClaims(input, context) {
-  const claims = (input.claims || []).slice(0, MAX_VERIFY_CLAIMS).map((c) => truncate(c, 2000).text);
+  const claims = (input.claims || []).slice(0, MAX_VERIFY_CLAIMS).map((c) => truncate2(c, 2000).text);
   if (claims.length === 0) {
     return {
       claims: [],
@@ -794,13 +1338,13 @@ async function verifyClaims(input, context) {
   }
   let evidenceText = "";
   if (typeof input.evidence === "string") {
-    evidenceText = truncate(input.evidence, MAX_VERIFY_EVIDENCE_CHARS).text;
+    evidenceText = truncate2(input.evidence, MAX_VERIFY_EVIDENCE_CHARS).text;
   } else if (Array.isArray(input.evidence)) {
     evidenceText = input.evidence.map((item, idx) => `[Evidence ${item.id ?? idx + 1}]:
 ${item.text}`).join(`
 
 `);
-    evidenceText = truncate(evidenceText, MAX_VERIFY_EVIDENCE_CHARS).text;
+    evidenceText = truncate2(evidenceText, MAX_VERIFY_EVIDENCE_CHARS).text;
   }
   const autoAccept = input.auto_accept ?? 0.8;
   const subjectAt = input.subject_at ?? 0.5;
@@ -873,7 +1417,7 @@ ${evidenceText}`;
   };
 }
 async function screenText(input, context) {
-  const textTrunc = truncate(input.text, MAX_SCREEN_CHARS).text;
+  const textTrunc = truncate2(input.text, MAX_SCREEN_CHARS).text;
   const blockAt = input.block_at ?? 0.75;
   const reviewAt = input.review_at ?? 0.25;
   let state = `TEXT TO SCREEN:
@@ -937,7 +1481,7 @@ ${input.purpose}`;
   };
 }
 async function extractFields(input, context) {
-  const doc = truncate(input.document, MAX_EXTRACT_DOC_CHARS).text;
+  const doc = truncate2(input.document, MAX_EXTRACT_DOC_CHARS).text;
   const fields = input.fields || [];
   const autoAccept = input.auto_accept ?? 0.85;
   const results = {};
@@ -1030,7 +1574,7 @@ ${doc}`;
   return { results };
 }
 async function auditRecords(input, context) {
-  const source = truncate(input.source, MAX_AUDIT_SOURCE_CHARS).text;
+  const source = truncate2(input.source, MAX_AUDIT_SOURCE_CHARS).text;
   const records = input.records || [];
   const wrongAt = input.wrong_at ?? 0.7;
   if (records.length === 0) {
@@ -1228,11 +1772,11 @@ async function judgeNoul(input, context) {
   for (let i = 0;i < propositions.length; i++) {
     questions[`prop_${i}`] = {
       type: "noul",
-      instructions: `Is the following proposition true: "${truncate(propositions[i], 2000).text}"?`
+      instructions: `Is the following proposition true: "${truncate2(propositions[i], 2000).text}"?`
     };
   }
   const state = input.context ? `CONTEXT / EVIDENCE:
-${truncate(input.context, 1e5).text}` : "Evaluate based on general facts, logic, and knowledge.";
+${truncate2(input.context, 1e5).text}` : "Evaluate based on general facts, logic, and knowledge.";
   const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const results = [];
@@ -1378,9 +1922,9 @@ async function decideChoice(input, context) {
   if (candidates.length < 2) {
     throw new Error("jev_decide requires at least 2 candidates to choose from.");
   }
-  const decisionTrunc = truncate(input.decision, MAX_DECISION_CHARS).text;
-  const evidenceTrunc = truncate(input.evidence, MAX_EVIDENCE_DECIDE_CHARS).text;
-  const prioritiesTrunc = truncate(input.priorities, MAX_PRIORITIES_CHARS).text;
+  const decisionTrunc = truncate2(input.decision, MAX_DECISION_CHARS).text;
+  const evidenceTrunc = truncate2(input.evidence, MAX_EVIDENCE_DECIDE_CHARS).text;
+  const prioritiesTrunc = truncate2(input.priorities, MAX_PRIORITIES_CHARS).text;
   const candidateDescriptions = candidates.map((c) => `[Candidate ID: ${c.id}]
 ${c.description}`).join(`
 
@@ -1474,10 +2018,10 @@ async function findBest(input, context) {
     };
   }
   const topK = Math.min(candidates.length, Math.max(1, input.top_k ?? 5));
-  const queryTrunc = truncate(input.query, 2000).text;
+  const queryTrunc = truncate2(input.query, 2000).text;
   const candidateEntries = candidates.map((c, idx) => ({
     id: c.id ?? `candidate_${idx + 1}`,
-    text: truncate(c.text, 2000).text
+    text: truncate2(c.text, 2000).text
   }));
   const candidateText = candidateEntries.map((c) => `[ID: ${c.id}]:
 ${c.text}`).join(`
@@ -1532,10 +2076,10 @@ async function rerankCandidates(input, context) {
     return { ranked: [] };
   }
   const topK = Math.min(candidates.length, Math.max(1, input.top_k ?? candidates.length));
-  const queryTrunc = truncate(input.query, 2000).text;
+  const queryTrunc = truncate2(input.query, 2000).text;
   const candidateEntries = candidates.map((c, idx) => ({
     id: c.id ?? `cand_${idx + 1}`,
-    text: truncate(c.text, 2000).text
+    text: truncate2(c.text, 2000).text
   }));
   const candidateText = candidateEntries.map((c) => `[ID: ${c.id}]:
 ${c.text}`).join(`
@@ -1573,8 +2117,8 @@ ${candidateText}`;
   return { ranked };
 }
 async function comparePassages(input, context) {
-  const passageATrunc = truncate(input.passage_a, 20000).text;
-  const passageBTrunc = truncate(input.passage_b, 20000).text;
+  const passageATrunc = truncate2(input.passage_a, 20000).text;
+  const passageBTrunc = truncate2(input.passage_b, 20000).text;
   const autoAccept = input.auto_accept ?? 0.85;
   const state = `PASSAGE A:
 ${passageATrunc}
@@ -7477,11 +8021,13 @@ async function handleRequest(req) {
     }
     try {
       const output = await tool.handler(validation.data);
+      const config = resolveConfig();
+      const formatted = formatToolResult(name, output, config.outputFormat);
       sendResult(id, {
         content: [
           {
             type: "text",
-            text: typeof output === "string" ? output : JSON.stringify(output, null, 2)
+            text: formatted
           }
         ]
       });

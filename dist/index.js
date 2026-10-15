@@ -90,6 +90,8 @@ function resolveConfig(explicit = {}) {
   const rawTimeout = env.JEV_TIMEOUT_MS || env.OPENAI_TIMEOUT_MS;
   const timeoutMs = explicit.timeoutMs ?? fileConfig.timeoutMs ?? (rawTimeout ? Number.parseInt(rawTimeout, 10) : DEFAULT_TIMEOUT_MS);
   const defaultThreshold = explicit.defaultThreshold ?? fileConfig.defaultThreshold ?? DEFAULT_THRESHOLD;
+  const rawFormat = (explicit.outputFormat || fileConfig.outputFormat || env.JEV_OUTPUT_FORMAT || "markdown").toLowerCase();
+  const outputFormat = rawFormat === "json" ? "json" : "markdown";
   if (explicit.apiKey || explicit.baseUrl || explicit.model) {
     source = "cli";
   } else if (fileConfig.apiKey || fileConfig.baseUrl || fileConfig.model) {
@@ -104,6 +106,7 @@ function resolveConfig(explicit = {}) {
     model,
     timeoutMs,
     defaultThreshold,
+    outputFormat,
     source
   };
 }
