@@ -7,8 +7,13 @@ import {
 } from "../src/tools/guardrails";
 import { judgeNoul } from "../src/tools/primitives";
 
+const hasCredentials = Boolean(
+  process.env.JEV_API_KEY || process.env.OPENAI_API_KEY
+);
+const itLive = it.skipIf(!hasCredentials);
+
 describe("Guardrails domain tools", () => {
-  it(
+  itLive(
     "verifies factual claims line-by-line against evidence with verifyClaims",
     async () => {
       const res = await verifyClaims({
@@ -33,7 +38,7 @@ Python was conceived in the late 1980s by Guido van Rossum at CWI in the Netherl
     20_000,
   );
 
-  it(
+  itLive(
     "screens text for prompt injection and substance with screenText",
     async () => {
       const malicious = await screenText({
@@ -52,7 +57,7 @@ Python was conceived in the late 1980s by Guido van Rossum at CWI in the Netherl
     20_000,
   );
 
-  it(
+  itLive(
     "extracts regex candidate matches with zero hallucination via extractFields",
     async () => {
       const doc = `
@@ -78,7 +83,7 @@ Internal tracking build: v2.4.1-beta.
     20_000,
   );
 
-  it(
+  itLive(
     "audits extracted values against source document with auditRecords",
     async () => {
       const source = "Order #9928 was placed by Alice Smith on 2026-05-10 for total $450.00.";
@@ -98,7 +103,7 @@ Internal tracking build: v2.4.1-beta.
     20_000,
   );
 
-  it(
+  itLive(
     "calibrates proposition probabilities with judgeNoul",
     async () => {
       const res = await judgeNoul({

@@ -6,8 +6,13 @@ import {
   rerankCandidates,
 } from "../src/tools/research";
 
+const hasCredentials = Boolean(
+  process.env.JEV_API_KEY || process.env.OPENAI_API_KEY
+);
+const itLive = it.skipIf(!hasCredentials);
+
 describe("Research domain tools", () => {
-  it(
+  itLive(
     "arbitrates technical candidate choices with decideChoice",
     async () => {
       const res = await decideChoice({
@@ -35,7 +40,7 @@ describe("Research domain tools", () => {
     20_000,
   );
 
-  it(
+  itLive(
     "finds best semantic hit with findBest and reports exists_verdict",
     async () => {
       const res = await findBest({
@@ -56,7 +61,7 @@ describe("Research domain tools", () => {
     20_000,
   );
 
-  it(
+  itLive(
     "reranks candidate list by relevance with rerankCandidates",
     async () => {
       const res = await rerankCandidates({
@@ -76,7 +81,7 @@ describe("Research domain tools", () => {
     20_000,
   );
 
-  it(
+  itLive(
     "compares two passages for contradiction or agreement with comparePassages",
     async () => {
       const res = await comparePassages({

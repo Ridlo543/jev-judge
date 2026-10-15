@@ -1,8 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { gatePatch, reviewDiff, screenAction } from "../src/tools/coding";
 
+const hasCredentials = Boolean(
+  process.env.JEV_API_KEY || process.env.OPENAI_API_KEY
+);
+const itLive = it.skipIf(!hasCredentials);
+
 describe("Coding domain tools", () => {
-  it(
+  itLive(
     "evaluates git diff patch with reviewDiff",
     async () => {
       const diff = `
@@ -31,7 +36,7 @@ diff --git a/src/auth.ts b/src/auth.ts
     20_000,
   );
 
-  it(
+  itLive(
     "performs completion gating with gatePatch and flags verified claims",
     async () => {
       const diff = `
@@ -67,7 +72,7 @@ Tests:       1 passed, 1 total
     20_000,
   );
 
-  it(
+  itLive(
     "escalates gatePatch when a claim is contradicted by evidence",
     async () => {
       const diff = `
@@ -98,7 +103,7 @@ Process exited with code 1
     20_000,
   );
 
-  it(
+  itLive(
     "screens risky commands with screenAction",
     async () => {
       const dangerous = await screenAction({

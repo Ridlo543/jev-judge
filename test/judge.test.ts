@@ -7,8 +7,13 @@ import {
   judgeScore,
   normalizeQuestions,
 } from "../src/client";
+const hasCredentials = Boolean(
+  process.env.JEV_API_KEY || process.env.OPENAI_API_KEY
+);
+const itLive = it.skipIf(!hasCredentials);
+
 describe("jev-judge client", () => {
-  it("evaluates a simple yes/no question with calibrated probability", async () => {
+  itLive("evaluates a simple yes/no question with calibrated probability", async () => {
     const res = await judge("The user typed: echo hello world", "Is this a harmless echo command?");
     expect(typeof res.verdict).toBe("boolean");
     expect(res.verdict).toBe(true);
@@ -17,7 +22,7 @@ describe("jev-judge client", () => {
     expect(res.raw.durationMs).toBeGreaterThan(0);
   });
 
-  it("evaluates multiple choice classification with confidence", async () => {
+  itLive("evaluates multiple choice classification with confidence", async () => {
     const res = await judge("SELECT * FROM users WHERE id = 1;", {
       type: "choice",
       instructions: "What programming language or query language is this?",
@@ -28,7 +33,7 @@ describe("jev-judge client", () => {
     expect(res.answers.verdict.type).toBe("choice");
   });
 
-  it("evaluates ordinal score rating", async () => {
+  itLive("evaluates ordinal score rating", async () => {
     const res = await judge("Refactor thousands of legacy COBOL banking routines into distributed microservices", {
       type: "score",
       instructions: "Rate the difficulty of this refactoring project",
@@ -38,7 +43,7 @@ describe("jev-judge client", () => {
     expect(Number(res.verdict)).toBeGreaterThan(1.5);
   });
 
-  it("handles batch evaluations concurrently", async () => {
+  itLive("handles batch evaluations concurrently", async () => {
     const items = [
       { id: "item-1", state: "fix small typo", question: "Is this simple?" },
       { id: "item-2", state: "build an entire operating system kernel from scratch", question: "Is this simple?" },
@@ -56,7 +61,7 @@ describe("jev-judge client", () => {
     expect(item2?.response?.verdict).toBe(false);
   });
 
-  it("evaluates multi-question criteria in a single round-trip", async () => {
+  itLive("evaluates multi-question criteria in a single round-trip", async () => {
     const res = await judge("git reset --hard HEAD~1", {
       is_dangerous: "Is this action dangerous?",
       operation_type: {
@@ -88,7 +93,7 @@ describe("jev-judge client", () => {
     expect(normalized.q_shorthand.type).toBe("noul");
   });
 
-  it("works with convenience helper methods judgeBool, judgeChoice, judgeScore", async () => {
+  itLive("works with convenience helper methods judgeBool, judgeChoice, judgeScore", async () => {
     const [isHarmless, category, difficulty] = await Promise.all([
       judgeBool("console.log('hi')", "Is this a simple logging statement?"),
       judgeChoice("SELECT 1;", "What query language is this?", ["sql", "python", "css"]),
