@@ -1,291 +1,289 @@
-# Jev (Universal TypeSafe Decision Model Runner & MCP Server)
+# Jev: Decision Model Runner and MCP Server
 
-Fast, calibrated decision model runner for **Claude Code**, **Oh My Pi (OMP)**, **Cursor**, **Windsurf**, **Cline**, CI/CD pipelines, CLI terminal, and TypeScript/Node/Bun projects. Powered by **TypeSafe Jev (System One Decision Model)** with **100% Provider-Agnostic & OpenAI-Compatible Architecture**.
+Model Context Protocol (MCP) server, CLI runner, and TypeScript SDK for TypeSafe Jev decision models. Designed for Claude Code, Oh My Pi (OMP), Cursor, Windsurf, Cline, and terminal workflows.
 
----
-
-## 💡 Mengapa Decision Model, Bukan LLM Chat Biasa?
-
-Model bahasa percakapan (LLM seperti Claude atau GPT) dirancang untuk memprediksi token teks berikutnya (prose). Menggunakan LLM chat untuk evaluasi biner (*"apakah ini aman?"*), audit kode, atau pengambilan keputusan arsitektur sering memicu:
-- **Confirmation Bias & Sycophancy:** LLM cenderung membenarkan pekerjaannya sendiri (*"yes, this looks good"*).
-- **Format Halucination:** Teks markdown pengantar, backticks, atau JSON parsing error.
-- **Probabilitas Semu:** Tidak memberikan probabilitas terkalibrasi secara matematis.
-- **Latensi Tinggi:** Membutuhkan 5–15 detik untuk menulis kalimat penalaran panjang.
-
-**TypeSafe Jev (System One)** adalah model neural khusus **Decision & Classification**:
-1. **Nol Halusinasi Format:** Output langsung berupa typed decision struct.
-2. **Probabilitas Terkalibrasi (Calibrated Confidence):** Mengembalikan angka probabilitas matematis nyata (`0.0` – `1.0`).
-3. **Sangat Cepat:** Round-trip rata-rata **~400ms – 900ms**.
-4. **Multi-Criteria Single-Pass:** Evaluasi belasan kriteria dalam 1 kali round-trip.
-5. **Zero Token Waste:** Tidak ada kalimat basa-basi yang membuang kuota token.
+Compatible with any OpenAI-compatible endpoint or direct decision gateway.
 
 ---
 
-## 🛠️ Taksonomi 14 MCP Tools (4 Domain Modular)
+## Architecture
 
-### 1. 🛠️ Domain Coding & Acceptance Gating (Anti-Fake Done)
-- **`jev_review`**: Evaluasi git diff / patch terhadap permintaan tiket. Mengembalikan skor ordinal 0..2 untuk `correctness`, `spec_match`, `test_gap`, `blast_radius`, komposit terbobot (`0.0 - 1.0`), dan aksi policy (`auto | review | escalate`).
-- **`jev_gate`**: Gate penentu sebelum commit/merge. Memeriksa patch diff sekaligus memverifikasi klaim pengembang (*"semua unit test lulus"*, *"no secret leak"*) terhadap bukti log nyata (*evidence*). **Strict Anti-Fake Done:** Jika ada klaim yang kontradiktif terhadap bukti nyata, gate langsung menolak dengan status `escalate`.
-- **`jev_action_gate`**: Pre-execution safety screen untuk menyaring command shell atau modifikasi file sebelum dieksekusi autonomous agent. Mengembalikan `risk_score` (0..3), boolean `touches_prod`, dan rekomendasi (`allow | confirm | block`).
+Autoregressive chat models predict token sequences. When evaluating diffs, checking security boundaries, or choosing between architectural alternatives, chat models present specific failure modes:
 
-### 2. 🔬 Domain Technical Research & Decision Making
-- **`jev_decide`**: Memilih 1 opsi terbaik dari 2–6 kandidat alternatif teknis berdasarkan matriks kebutuhan (*requirements*), bukti (*evidence*), dan prioritas. Dilengkapi escape hatches (`ask_user`, `investigate`, `none`) bila data tidak cukup, mencegah spekulasi.
-- **`jev_find`**: Menemukan kandidat paling relevan dari daftar array teks dan menentukan apakah ada jawaban yang valid (`exists_verdict: answered | partial | absent`).
-- **`jev_rerank`**: Mengurutkan seluruh array kandidat berdasarkan skor relevansi semantik kontinu tanpa memerlukan vector database atau embedding eksternal.
-- **`jev_compare`**: Membandingkan 2 passage atau dokumen spek untuk mendeteksi relasi (`same_fact | contradicts | different_facts`), baik secara keseluruhan maupun per aspek individual.
+- **Sycophancy and self-confirmation:** Models tend to approve changes they or similar models generated.
+- **Uncalibrated confidence:** Models express certainty through tone rather than calibrated probability.
+- **Latency and token overhead:** Writing paragraphs of rationale consumes context tokens and takes several seconds.
 
-### 3. 🛡️ Domain Guardrails & Verification (Fact-Checking)
-- **`jev_verify`**: Fact-checking baris per baris terhadap dokumen bukti (*citation-check*). Menguji relasi klaim (`supports | contradicts | says_nothing`) dan verifikasi kesamaan subjek (*same-subject check*) untuk memutus confirmation bias.
-- **`jev_screen`**: Menyaring teks yang di-fetch atau di-paste sebelum masuk ke context window agent: mendeteksi prompt injection, instruksi tersembunyi, teks sampah (*substance check*), dan relevansi tugas.
-- **`jev_extract`**: Ekstraksi nilai verbatim dari dokumen menggunakan regex kandidat yang diseleksi oleh Jev (model tidak pernah mengarang atau berhalusinasi teks).
-- **`jev_audit`**: Mengaudit data hasil ekstraksi terhadap dokumen sumber untuk mendeteksi kegagalan: `hallucinated`, `off_target`, atau `incomplete`.
-
-### 4. 🌐 Domain Primitives & Universal
-- **`jev_judge`**: Evaluasi bebas fleksibel (string tunggal, array of strings, Yes/No, multiple-choice, rating scale, atau map of questions).
-- **`jev_judge_batch`**: Evaluasi massal concurrent dengan throughput rate-limiting.
-- **`jev_noul`**: Menghitung probabilitas terkalibrasi (`0.0 - 1.0`) untuk hipotesis kalimat tunggal dengan label `likely | unlikely | uncertain`.
+Jev models isolate classification and scoring into single-pass inferences:
+- **Calibrated probabilities:** Returns numeric confidence intervals ($0.0 \dots 1.0$) mapped to historical test distributions.
+- **Typed structs:** Returns structured decision objects without markdown preambles or conversational filler.
+- **Latency:** Typical round trips complete in 400ms to 900ms.
+- **Token density:** Tool responses average 120 tokens, reducing prompt token consumption by roughly 80% compared to chat responses.
 
 ---
 
-## ⚙️ Konfigurasi Manual (100% Provider-Agnostic)
+## Terminal and TUI Output
 
-Sistem ini **tidak meng-hardcode nama vendor tertentu**. Anda bebas mengarahkannya ke provider/gateway apa saja (OpenRouter, LiteLLM, vLLM, ainyrouter, proxy lokal, atau TypeSafe direct).
+Standard MCP servers often return raw JSON dumps that terminal interfaces format as deep collapsible trees. Jev includes a terminal card formatter that outputs aligned Markdown tables, clear badges (`✅`, `🟢`, `🟡`, `🛑`, `⚠️`), and execution timing.
 
-Konfigurasi dibaca secara berjenjang:
-1. **Explicit CLI flags:** `--base-url`, `--api-key`, `--model`, `--protocol`
-2. **MCP config env (`.mcp.json`):** Environment variable yang diatur langsung di client MCP.
-3. **File `jev.config.json`:** Diletakkan di root project atau direktori kerja.
-4. **File `.env`:** File `.env` lokal di direktori kerja.
+### `jev_judge` (Multi-Criteria Evaluation)
+```markdown
+### ⚖️ Jev Judgment: ✅ TRUE (75.0% probability)
 
-### Environment Variables Standar:
-- `JEV_BASE_URL` (atau `OPENAI_BASE_URL`): URL endpoint provider Anda (misal: `https://api.openai.com/v1`, `http://localhost:8000/v1`, atau router Anda).
-- `JEV_API_KEY` (atau `OPENAI_API_KEY`): API Key otentikasi Anda.
-- `JEV_MODEL` (atau `OPENAI_MODEL`): Nama model decision (misal: `opencode-free/jev-1.13-free`, `jev-latest`, dll).
-- `JEV_PROTOCOL`: Mode wire protocol: `chat-completions` (default OpenAI-compatible) atau `typesafe-direct`.
+| Question / Metric | Verdict | Prob / Conf |
+| :--- | :---: | :---: |
+| **is_clean_code** | ✅ true | 74.0% |
+| **quality_tier** | `production_ready` | 82.0% |
 
----
-
-## 🤖 Panduan Integrasi MCP di Agent (Workspace & Global)
-
-Server MCP `jev` dapat dipasang di level **Workspace Project** (khusus repo ini) atau **Global** (berlaku di semua proyek).
-
-### 🚀 Cara Paling Cepat: Setup Wizard Otomatis (`jev setup`)
-
-Cukup jalankan wizard interaktif berikut di terminal:
-```bash
-# Menggunakan npx (siapa pun yang punya Node.js):
-npx jev-judge setup
-
-# ATAU jika binary jev sudah ada:
-jev setup
+⏱️ *Latency: 1273ms · Model: opencode-free/jev-1.13-free*
 ```
-Wizard akan menanyakan:
-1. Target Agent: **Claude Code**, **Oh My Pi (OMP)**, **Cursor**, atau **Workspace Local**.
-2. Base URL & API Key Anda.
-3. Model ID (default `jev-latest`).
-Dan otomatis menulis file `.mcp.json` / config tanpa perlu edit JSON manual!
 
----
+### `jev_review` (Patch and Diff Review)
+```markdown
+### 🔍 Diff Review: 🟢 AUTO (Composite: 0.88 / 1.0)
 
-### 🛠️ Pilihan Executable untuk Eksternal Developer
-1. **NPX / Node.js (Paling Populer & Zero-Install):** `npx -y jev-judge mcp`
-2. **Standalone Binary (Zero Runtime Needed):** Unduh `jev-mcp.exe` (Windows) atau `jev-mcp-linux-x64` dari GitHub Releases.
-3. **Bun Runtime:** Menggunakan `bun <path>/src/mcp.ts`
+- **Safe to Apply:** `true`
+- **Decision Recommendation:** `auto`
 
----
-
-### 1. Oh My Pi (OMP)
-
-#### A. Workspace Project Level (`.omp/mcp.json` di root project):
-File ini sudah terpasang otomatis di repo ini (`.omp/mcp.json`):
-```json
-{
-  "mcpServers": {
-    "jev": {
-      "command": "bun",
-      "args": ["src/mcp.ts"],
-      "env": {
-        "JEV_BASE_URL": "https://your-api-endpoint.example.com/v1",
-        "JEV_API_KEY": "your-api-key-here",
-        "JEV_MODEL": "your-model-name"
-      }
-    }
-  }
-}
+| Rubric Metric | Score (0..2) |
+| :--- | :---: |
+| **Correctness** | `1.80` |
+| **Spec Match** | `1.90` |
+| **Test Gap** | `0.20` |
+| **Blast Radius** | `0.30` |
 ```
-*(Atau ganti `command` ke `"D:/Programming/project/jev-judge/jev-mcp.exe"` tanpa `args` jika ingin standalone).*
 
-#### B. Global Level (`~/.omp/mcp.json`):
-Tambahkan ke `C:/Users/<Username>/.omp/mcp.json`:
-```json
-{
-  "mcpServers": {
-    "jev": {
-      "command": "D:/Programming/project/jev-judge/jev-mcp.exe",
-      "env": {
-        "JEV_BASE_URL": "https://your-api-endpoint.example.com/v1",
-        "JEV_API_KEY": "your-api-key-here",
-        "JEV_MODEL": "your-model-name"
-      }
-    }
-  }
-}
+### `jev_gate` (Acceptance Verification)
+```markdown
+### 🚪 Acceptance Gate: 🟢 AUTO (Diff Quality: 0.92)
+**Claims Audit:** 2/2 Verified · **Contradicted:** 0 · **All Verified:** YES
+
+- ✅ **[VERIFIED]** Package version was incremented to 1.0.1
+- ✅ **[VERIFIED]** All unit tests pass
+```
+
+### `jev_action_gate` (Command Safety Screening)
+```markdown
+### 🛡️ Action Safety Gate: 🛑 BLOCK (Risk: 2.85 / 3.0)
+
+- **Action/Command:** `rm -rf / --no-preserve-root`
+- **Recommendation:** **BLOCK**
+- **Destructive Operation:** `YES`
+- **Requires Human Escalation:** `YES`
+- **Safety Analysis:** Destructive root recursive deletion detected
+```
+
+### `jev_decide` (Candidate Selection)
+```markdown
+### 🎯 Technical Decision: `postgresql_partitioned` (92.0% confidence)
+
+- **Status:** 🎯 DECIDED · Selected: **postgresql_partitioned**
+
+| Candidate | Requirement # | Status |
+| :--- | :---: | :---: |
+| **postgresql_partitioned** | Req 1 | 🟢 SUPPORTED |
+| **sqlite_in_memory** | Req 1 | 🛑 CONTRADICTED |
+```
+
+### `jev_verify` (Citation and Claim Verification)
+```markdown
+### 📋 Citation Verification: 2 Verified · 1 Contradicted · 0 Unsupported
+
+- ✅ **[VERIFIED]** Bun is an all-in-one JavaScript runtime
+- ❌ **[CONTRADICTED]** Python was conceived in the late 1880s
+- ⚠️ **[UNSUPPORTED]** Rust was created by Graydon Hoare
 ```
 
 ---
 
-### 2. Claude Code
+## Tool Reference
 
-#### A. Menambahkan via Terminal Claude Code:
-```bash
-# Menggunakan binary standalone (paling direkomendasikan):
-claude mcp add jev -- "D:/Programming/project/jev-judge/jev-mcp.exe"
+### Coding and Gating
+- `jev_review`: Scores git diffs against task requirements across four metrics (`correctness`, `spec_match`, `test_gap`, `blast_radius`), producing a composite score ($0.0 \dots 1.0$) and action (`auto | review | escalate`). Non-code diffs (markdown, CSS) automatically receive zero test gap penalty.
+- `jev_gate`: Compares cumulative git diffs and test execution logs against declared completion claims. Contradicted claims trigger an `escalate` status.
+- `jev_action_gate`: Screens terminal commands and file operations before execution, returning a risk score ($0 \dots 3$) and execution action (`allow | confirm | block`).
 
-# ATAU menggunakan Bun:
-claude mcp add jev -- bun "D:/Programming/project/jev-judge/src/mcp.ts"
-```
+### Technical Research
+- `jev_decide`: Evaluates 2 to 6 technical options against prioritized requirements and evidence, with escape hatches (`ask_user`, `investigate`, `none`).
+- `jev_find`: Locates the most relevant candidate from a list and verifies whether a valid answer exists (`answered | unanswerable`).
+- `jev_rerank`: Reorders candidate text items by semantic relevance without external vector databases.
+- `jev_compare`: Compares two passages or specifications for agreement, contradiction, or independent facts, both overall and per aspect.
 
-#### B. Workspace Project Level (`.mcp.json` di root project):
-File `.mcp.json` sudah dibuat di root workspace ini dan otomatis terbaca oleh Claude Code:
-```json
-{
-  "mcpServers": {
-    "jev": {
-      "command": "bun",
-      "args": ["src/mcp.ts"],
-      "env": {
-        "JEV_BASE_URL": "https://your-api-endpoint.example.com/v1",
-        "JEV_API_KEY": "your-api-key-here",
-        "JEV_MODEL": "your-model-name"
-      }
-    }
-  }
-}
-```
+### Guardrails and Verification
+- `jev_verify`: Verifies factual claims line by line against cited evidence text.
+- `jev_screen`: Detects prompt injection, hidden instructions, and low-substance content in external input.
+- `jev_extract`: Extracts verbatim field values from source text using regex candidate matching.
+- `jev_audit`: Audits extracted field values against source documents for hallucinated, wrong, or missing data.
 
-#### C. Global Level (`~/.claude.json`):
-Tambahkan ke blok `mcpServers` di `~/.claude.json`:
-```json
-{
-  "mcpServers": {
-    "jev": {
-      "command": "D:/Programming/project/jev-judge/jev-mcp.exe",
-      "env": {
-        "JEV_BASE_URL": "https://your-api-endpoint.example.com/v1",
-        "JEV_API_KEY": "your-api-key-here",
-        "JEV_MODEL": "your-model-name"
-      }
-    }
-  }
-}
-```
+### Primitives
+- `jev_judge`: Flexible evaluator accepting boolean questions, choices, numeric scores, or criteria maps.
+- `jev_judge_batch`: Concurrent batch execution with rate limiting.
+- `jev_noul`: Evaluates calibrated proposition probabilities ($0.0 \dots 1.0$).
 
 ---
 
-### 3. Cursor / Windsurf / Cline
-Tambahkan ke `.cursor/mcp.json` atau `.cline/mcp.json`:
-```json
-{
-  "mcpServers": {
-    "jev": {
-      "command": "D:/Programming/project/jev-judge/jev-mcp.exe",
-      "env": {
-        "JEV_BASE_URL": "https://your-api-endpoint.example.com/v1",
-        "JEV_API_KEY": "your-api-key-here",
-        "JEV_MODEL": "your-model-name"
-      }
-    }
-  }
-}
-```
----
+## Setup and Integration
 
-## 💻 Panduan Penggunaan CLI (`jev`)
+### Setup Wizard
 
-Binary CLI `jev` siap dipanggil dari command line atau pipa Unix / PowerShell:
+Run the interactive setup command to configure client settings:
 
 ```bash
-# 1. Quick check boolean (Exit code 0 jika true, 1 jika false):
-jev "rm -rf /tmp/cache/*" "Is this safe to run?" --threshold 0.5
+npx -y jev-judge setup
+```
 
-# 2. Review git diff langsung dari terminal:
+The command prompts for target client (Claude Code, Oh My Pi, Cursor, or workspace config), endpoint URL, model name, and API key.
+
+### Oh My Pi (OMP)
+
+Add to global configuration (`~/.omp/agent/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "jev": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "github:Ridlo543/jev-judge", "mcp"],
+      "env": {
+        "JEV_BASE_URL": "https://your-api-endpoint.com/v1",
+        "JEV_MODEL": "opencode-free/jev-1.13-free",
+        "JEV_API_KEY": "${ROUTER_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+For sub-second startup without network checks, set `command` directly to the compiled binary (`jev-mcp.exe` or `jev-mcp-linux-x64`).
+
+### Claude Code
+
+Add via CLI:
+
+```bash
+claude mcp add jev -- npx -y github:Ridlo543/jev-judge mcp
+```
+
+Or add to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "jev": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "github:Ridlo543/jev-judge", "mcp"],
+      "env": {
+        "JEV_BASE_URL": "https://your-api-endpoint.com/v1",
+        "JEV_MODEL": "opencode-free/jev-1.13-free",
+        "JEV_API_KEY": "${ROUTER_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+### Cursor and Windsurf
+
+Add to `.cursor/mcp.json` or `.cline/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "jev": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "github:Ridlo543/jev-judge", "mcp"],
+      "env": {
+        "JEV_BASE_URL": "https://your-api-endpoint.com/v1",
+        "JEV_MODEL": "opencode-free/jev-1.13-free",
+        "JEV_API_KEY": "${ROUTER_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+---
+
+## CLI Usage
+
+The standalone binary `jev` accepts direct CLI arguments and piped input:
+
+```bash
+# Boolean check (exit code 0 if true, 1 if false)
+jev "rm -rf /tmp/cache/*" "Is this safe to run automatically?" --threshold 0.5
+
+# Git diff review
 git diff | jev review --stdin --request "Refactor auth middleware to use JWT"
 
-# 3. Acceptance gate sebelum git commit (Anti-Fake Done):
+# Acceptance gating before commit
 git diff | jev gate --stdin \
   --request "Fix race condition in payment ledger" \
   --evidence test-results.log \
   --claim "All payment tests pass" \
   --claim "No uncommitted secrets"
 
-# 4. Klasifikasi pilihan ganda:
+# Categorization
 jev -s "PostgreSQL connection pool exhausted" -c "network,database,client"
 
-# 5. Output JSON mentah:
+# JSON output for scripts
 jev "SELECT * FROM users;" "Is this SQL?" --json
 ```
 
 ---
 
-## 📦 TypeScript / Bun Programmatic SDK
+## Configuration Reference
 
-Gunakan langsung di kode TypeScript/JavaScript Anda:
+Settings resolve in order of priority:
+1. CLI flags (`--base-url`, `--api-key`, `--model`, `--protocol`, `--json`)
+2. MCP client environment variables (`env` object in `.mcp.json`)
+3. Project configuration file (`jev.config.json`)
+4. Local environment file (`.env`)
+5. System shell environment variables
 
-```typescript
-import {
-  judge,
-  reviewDiff,
-  gatePatch,
-  decideChoice,
-  verifyClaims,
-  screenAction,
-} from "jev-judge";
-
-// 1. Review patch diff
-const review = await reviewDiff({
-  diff: gitDiffString,
-  request: "Implement zero-downtime database migration",
-});
-console.log("Verdict:", review.action, "Composite Score:", review.composite);
-
-// 2. Acceptance Gate dengan verifikasi klaim vs bukti nyata
-const gate = await gatePatch({
-  diff: gitDiffString,
-  request: "Add session rate limiter",
-  claims: ["All unit tests pass", "No breaking API changes"],
-  evidence: testOutputLogString,
-});
-
-if (gate.action === "escalate") {
-  throw new Error("Task rejected by Jev Gate: developer claims not backed by evidence!");
-}
-
-// 3. Keputusan Teknis Terukur (Decide)
-const decision = await decideChoice({
-  decision: "Choose caching store for user sessions",
-  candidates: [
-    { id: "redis", description: "In-memory Redis with TTL and sentinel failover" },
-    { id: "local_memory", description: "Node.js process Map (resets on restart)" },
-  ],
-  evidence: "Sessions must survive server restarts and scale across multiple nodes.",
-  priorities: "High availability and distributed access.",
-  requirements: ["Survives node restarts"],
-});
-console.log("Recommended:", decision.recommendation.selected);
-```
+| Variable | Description | Default |
+|---|---|---|
+| `JEV_BASE_URL` or `OPENAI_BASE_URL` | Provider endpoint URL | None |
+| `JEV_API_KEY` or `OPENAI_API_KEY` | Provider API key | None |
+| `JEV_MODEL` or `OPENAI_MODEL` | Decision model identifier | None |
+| `JEV_PROTOCOL` | `chat-completions` or `typesafe-direct` | `chat-completions` |
+| `JEV_OUTPUT_FORMAT` | `markdown` (formatted card) or `json` (clean JSON) | `markdown` |
+| `JEV_TIMEOUT_MS` | Request deadline in milliseconds | `20000` |
 
 ---
 
-## 🧪 Verifikasi & Testing Suite
+## Binaries
 
-Seluruh 14 tools dan core transport telah diverifikasi dengan test suite otomatis:
+Compiled standalone executables are published with each [GitHub Release](https://github.com/Ridlo543/jev-judge/releases):
+
+| Platform | CLI (`jev`) | MCP Server (`jev-mcp`) |
+|---|---|---|
+| Windows x64 | `jev-windows-x64.exe` | `jev-mcp-windows-x64.exe` |
+| Linux x64 | `jev-linux-x64` | `jev-mcp-linux-x64` |
+| macOS Apple Silicon (arm64) | `jev-darwin-arm64` | `jev-mcp-darwin-arm64` |
+
+---
+
+## Test Suite
+
+Run the automated test suite:
 
 ```bash
 bun test
 ```
 
-Test suite mencakup:
-- `test/coding.test.ts` (patch review, gate verification, safety screening)
-- `test/research.test.ts` (decision arbitration, semantic find, reranking, passage compare)
-- `test/guardrails.test.ts` (fact-checking citation check, anti prompt injection, verbatim extraction, audit)
-- `test/judge.test.ts` (core client, multi-criteria normalization, concurrent batch runner)
+The suite covers 36 tests across 6 files:
+- `test/formatter.test.ts`: Markdown card rendering, table alignment, badge mappings, and JSON cleanup
+- `test/validation.test.ts`: Zod schema validation, argument type checks, and threshold boundary rules
+- `test/coding.test.ts`: Review composite formulas, acceptance gating, and action screening
+- `test/research.test.ts`: Option arbitration, semantic search, candidate reranking, and passage comparisons
+- `test/guardrails.test.ts`: Citation verification, prompt injection detection, regex extraction, and record audits
+- `test/judge.test.ts`: Core client normalization, multi-question rubrics, and concurrent batch evaluation
+
+---
+
+## License
+
+MIT License. Copyright (c) 2026 TypeSafe Jev Decision Runner Contributors.
