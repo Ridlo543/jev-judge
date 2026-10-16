@@ -21,6 +21,8 @@ bun.lockb
 
 # Compiled binaries (distributed via GitHub Releases)
 *.exe
+*.old.*
+*.old
 jev-windows-x64.exe
 jev-mcp-windows-x64.exe
 jev-linux-x64
@@ -29,6 +31,7 @@ jev-darwin-arm64
 jev-mcp-darwin-arm64
 
 # Operating System & IDE artifacts
+.codegraph/
 .DS_Store
 Thumbs.db
 *.log

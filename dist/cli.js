@@ -8998,6 +8998,8 @@ Fast, calibrated decision model runner for coding gating, diff reviews, research
   setup                      Interactive wizard to configure MCP for Claude Code, OMP, Cursor, or workspace
   review                     Evaluate git diff / patch (correctness, spec match, test gap, blast radius)
   gate                       Gating verification: diff review + developer claims vs evidence (Anti-Fake Done)
+
+\x1B[1mOPTIONS:\x1B[0m
   -s, --state <text>         State/content/code to evaluate
   -f, --file <path>          Read state from a file (e.g. diff, log, source)
   -q, --question <text>      Yes/No question to answer
@@ -9073,8 +9075,13 @@ async function main() {
     const arg = filteredArgs[i];
     if (arg === "-s" || arg === "--state") {
       state = filteredArgs[++i];
-    } else if (arg === "-f" || arg === "--file") {
-      filePath = filteredArgs[++i];
+    } else if (arg === "-f" || arg === "--file" || arg === "--diff") {
+      const val = filteredArgs[++i];
+      if (fs3.existsSync(val)) {
+        filePath = val;
+      } else {
+        state = val;
+      }
     } else if (arg === "-q" || arg === "--question") {
       question = filteredArgs[++i];
     } else if (arg === "-c" || arg === "--choice") {
