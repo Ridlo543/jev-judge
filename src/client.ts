@@ -340,40 +340,125 @@ export async function judge<TAnswers extends Answers = Answers>(
   options: JevClientOptions = {},
 ): Promise<JudgeResponse<TAnswers>> {
   const questions = normalizeQuestions(questionInput);
-  const result = await rawJevJudgment(state, questions, options);
+  const expandedQuestions: Questions = {};
 
-  const keys = Object.keys(result.answers);
-  const firstKey = keys[0];
-  const firstAnswer: Answer | undefined = firstKey ? result.answers[firstKey] : undefined;
+  for (const [key, q] of Object.entries(questions)) {
+    expandedQuestions[key] = q;
+    if (q.type === "choice") {
+      const criteria = q.criteria || {};
+      for (const [optKey, optDesc] of Object.entries(criteria)) {
+        expandedQuestions[`opt_${key}_${optKey}`] = {
+          type: "noul",
+          instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
+          criteria: { true: optKey, false: `not ${optKey}` },
+        };
+      }
+    } else if (q.type === "score") {
+      const criteria = q.criteria || [];
+      for (let i = 0; i < criteria.length; i++) {
+        expandedQuestions[`lvl_${key}_${i}`] = {
+          type: "noul",
+          instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
+          criteria: { true: criteria[i], false: `not ${criteria[i]}` },
+        };
+      }
+    }
+  }
 
+  const result = await rawJevJudgment(state, expandedQuestions, options);
+  const synthesizedAnswers: Record<string, Answer> = {};
   const verdicts: Record<string, boolean | string | number> = {};
   const probabilities: Record<string, number> = {};
 
-  for (const [key, ans] of Object.entries(result.answers)) {
-    if (ans.type === "noul") {
-      verdicts[key] = ans.noul >= (options.defaultThreshold ?? 0.5);
-      probabilities[key] = ans.noul;
-    } else if (ans.type === "choice") {
-      verdicts[key] = ans.choice;
-      probabilities[key] = ans.confidence;
-    } else if (ans.type === "score") {
-      verdicts[key] = ans.score;
-      probabilities[key] = ans.confidence ?? 1.0;
+  for (const [key, q] of Object.entries(questions)) {
+    const directAns = result.answers[key];
+
+    if (q.type === "choice") {
+      if (directAns && directAns.type === "choice" && typeof (directAns as ChoiceAnswer).choice === "string") {
+        synthesizedAnswers[key] = directAns;
+        verdicts[key] = (directAns as ChoiceAnswer).choice;
+        probabilities[key] = (directAns as ChoiceAnswer).confidence;
+      } else {
+        const criteriaKeys = Object.keys(q.criteria || {});
+        const scores = criteriaKeys.map((cKey) => ({
+          key: cKey,
+          p: (result.answers[`opt_${key}_${cKey}`] as NoulAnswer | undefined)?.noul ?? 0,
+        }));
+        scores.sort((a, b) => b.p - a.p);
+        const best = scores[0] || { key: criteriaKeys[0] || "yes", p: 0.8 };
+        const sum = scores.reduce((acc, s) => acc + s.p, 0) || 1;
+
+        const choiceAns: ChoiceAnswer = {
+          type: "choice",
+          choice: best.key,
+          confidence: best.p,
+          probabilities: Object.fromEntries(
+            scores.map((s) => [s.key, Math.round((s.p / sum) * 100) / 100]),
+          ),
+        };
+        synthesizedAnswers[key] = choiceAns;
+        verdicts[key] = best.key;
+        probabilities[key] = best.p;
+      }
+    } else if (q.type === "score") {
+      if (directAns && directAns.type === "score" && typeof (directAns as ScoreAnswer).score === "number") {
+        synthesizedAnswers[key] = directAns;
+        verdicts[key] = (directAns as ScoreAnswer).score;
+        probabilities[key] = (directAns as ScoreAnswer).confidence ?? 1.0;
+      } else {
+        const levels = q.criteria || [];
+        const scores = levels.map((lvl, idx) => ({
+          idx,
+          lvl,
+          p: (result.answers[`lvl_${key}_${idx}`] as NoulAnswer | undefined)?.noul ?? 0,
+        }));
+        const sum = scores.reduce((acc, s) => acc + s.p, 0) || 1;
+        const expectedScore = scores.reduce((acc, s) => acc + s.idx * (s.p / sum), 0);
+        const maxProb = Math.max(...scores.map((s) => s.p), 0.7);
+
+        const scoreAns: ScoreAnswer = {
+          type: "score",
+          score: Math.round(expectedScore * 100) / 100,
+          confidence: maxProb,
+          legend: Object.fromEntries(levels.map((lvl, idx) => [String(idx), lvl])),
+          probabilities: Object.fromEntries(
+            scores.map((s) => [String(s.idx), Math.round((s.p / sum) * 100) / 100]),
+          ),
+        };
+        synthesizedAnswers[key] = scoreAns;
+        verdicts[key] = Math.round(expectedScore * 100) / 100;
+        probabilities[key] = maxProb;
+      }
+    } else {
+      const noulAns = directAns as NoulAnswer | undefined;
+      const p = noulAns?.noul ?? 0;
+      const isTrue = p >= (options.defaultThreshold ?? 0.5);
+      synthesizedAnswers[key] = {
+        type: "noul",
+        noul: p,
+        bool: p,
+      };
+      verdicts[key] = isTrue;
+      probabilities[key] = p;
     }
   }
+
+  const originalKeys = Object.keys(questions);
+  const primaryKey = originalKeys[0];
+  const primaryAns = primaryKey ? synthesizedAnswers[primaryKey] : undefined;
 
   let verdict: boolean | string | number = false;
   let probability: number | undefined;
   let confidence: number | undefined;
 
-  if (firstAnswer) {
-    verdict = verdicts[firstKey] ?? false;
-    if (firstAnswer.type === "noul") {
-      probability = firstAnswer.noul;
-    } else if (firstAnswer.type === "choice") {
-      confidence = firstAnswer.confidence;
-    } else if (firstAnswer.type === "score") {
-      confidence = firstAnswer.confidence;
+  if (primaryKey && primaryAns) {
+    verdict = verdicts[primaryKey] ?? false;
+    if (primaryAns.type === "noul") {
+      probability = primaryAns.noul;
+    } else if (primaryAns.type === "choice") {
+      confidence = primaryAns.confidence;
+    } else if (primaryAns.type === "score") {
+      confidence = primaryAns.confidence;
     }
   }
 
@@ -383,7 +468,7 @@ export async function judge<TAnswers extends Answers = Answers>(
     confidence,
     verdicts,
     probabilities,
-    answers: result.answers as TAnswers,
+    answers: synthesizedAnswers as TAnswers,
     questions,
     state,
     raw: result,

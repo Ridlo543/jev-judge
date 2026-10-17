@@ -79,14 +79,19 @@ describe("Universal Output Formatter", () => {
       },
     };
 
-    const md = formatToolResult("jev_judge", data, "markdown");
-    expect(md).toContain("### ⚖️ Jev Judgment: ✅ [TRUE]");
-    expect(md).toContain("#### Detailed Breakdown & Semantic Criteria");
-    expect(md).toContain("**85.0%** 🏆 (Winner)");
-    expect(md).toContain("Scale Legend: `0: fragile → 1: viable → 2: production-grade → 3: benchmark`");
-    expect(md).toContain("Level 2 (production-grade): **72.0%**");
-    expect(md).toContain("Latency: 1363ms");
-    expect(md).toContain("opencode-free/jev-1.13-free");
+    const mdCompact = formatToolResult("jev_judge", data, "markdown");
+    expect(mdCompact).toContain("### ⚖️ Jev Judgment: ✅ [TRUE]");
+    expect(mdCompact).toContain("| Question / Metric           |       Verdict        | Conf / Score | Meaning / Level         |");
+    expect(mdCompact).not.toContain("#### Detailed Breakdown & Semantic Criteria");
+
+    const mdVerbose = formatToolResult("jev_judge", data, "markdown-verbose");
+    expect(mdVerbose).toContain("### ⚖️ Jev Judgment: ✅ [TRUE]");
+    expect(mdVerbose).toContain("#### Detailed Breakdown & Semantic Criteria");
+    expect(mdVerbose).toContain("**85.0%** 🏆 (Winner)");
+    expect(mdVerbose).toContain("Scale Legend: `0: fragile → 1: viable → 2: production-grade → 3: benchmark`");
+    expect(mdVerbose).toContain("Level 2 (production-grade): **72.0%**");
+    expect(mdVerbose).toContain("Latency: 1363ms");
+    expect(mdVerbose).toContain("opencode-free/jev-1.13-free");
   });
 
   it("formats jev_review with rubric metric table and status badge", () => {

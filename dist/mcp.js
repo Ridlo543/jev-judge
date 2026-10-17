@@ -93,7 +93,7 @@ function resolveConfig(explicit = {}) {
   const timeoutMs = explicit.timeoutMs ?? fileConfig.timeoutMs ?? (rawTimeout ? Number.parseInt(rawTimeout, 10) : DEFAULT_TIMEOUT_MS);
   const defaultThreshold = explicit.defaultThreshold ?? fileConfig.defaultThreshold ?? DEFAULT_THRESHOLD;
   const rawFormat = (explicit.outputFormat || fileConfig.outputFormat || env.JEV_OUTPUT_FORMAT || "markdown").toLowerCase();
-  const outputFormat = rawFormat === "json" ? "json" : "markdown";
+  const outputFormat = rawFormat === "json" ? "json" : rawFormat === "markdown-verbose" || rawFormat === "verbose" ? "markdown-verbose" : "markdown";
   if (explicit.apiKey || explicit.baseUrl || explicit.model) {
     source = "cli";
   } else if (fileConfig.apiKey || fileConfig.baseUrl || fileConfig.model) {
@@ -298,7 +298,7 @@ function formatToolResult(toolName, data, format = "markdown") {
   try {
     switch (toolName) {
       case "jev_judge":
-        return formatJudgeResult(data);
+        return formatJudgeResult(data, format);
       case "jev_judge_batch":
         return formatBatchJudgeResult(data);
       case "jev_noul":
@@ -314,7 +314,7 @@ function formatToolResult(toolName, data, format = "markdown") {
         return formatActionGateResult(data);
       case "jev_decide":
       case "jev_arbitrate_decision":
-        return formatDecideResult(data);
+        return formatDecideResult(data, format);
       case "jev_find":
       case "jev_semantic_select":
         return formatFindResult(data);
@@ -343,7 +343,7 @@ function formatToolResult(toolName, data, format = "markdown") {
     return JSON.stringify(stripInternalMetadata(data), null, 2);
   }
 }
-function formatJudgeResult(res) {
+function formatJudgeResult(res, format = "markdown") {
   if (!res || typeof res !== "object")
     return String(res);
   const verdict = res.verdict;
@@ -474,7 +474,7 @@ function formatJudgeResult(res) {
     badge: `${badge} ${probText}`.trim(),
     table,
     details: details.length > 0 ? details : undefined,
-    sections: sections.length > 0 ? sections : undefined,
+    sections: format === "markdown-verbose" && sections.length > 0 ? sections : undefined,
     footer: {
       latencyMs: res.raw?.durationMs,
       model: res.raw?.model
@@ -601,7 +601,7 @@ function formatActionGateResult(res) {
     details
   });
 }
-function formatDecideResult(res) {
+function formatDecideResult(res, format = "markdown") {
   const rec = res?.recommendation;
   const selected = rec?.selected || "none";
   const confidence = typeof rec?.confidence === "number" ? `${(rec.confidence * 100).toFixed(1)}%` : "—";
@@ -642,7 +642,7 @@ function formatDecideResult(res) {
     badge: `\`${selected}\` (${confidence} confidence)`,
     details,
     table,
-    sections: sections.length > 0 ? sections : undefined
+    sections: format === "markdown-verbose" && sections.length > 0 ? sections : undefined
   });
 }
 function formatFindResult(res) {
@@ -1051,35 +1051,112 @@ function normalizeQuestions(input) {
 }
 async function judge(state, questionInput, options = {}) {
   const questions = normalizeQuestions(questionInput);
-  const result = await rawJevJudgment(state, questions, options);
-  const keys = Object.keys(result.answers);
-  const firstKey = keys[0];
-  const firstAnswer = firstKey ? result.answers[firstKey] : undefined;
-  const verdicts = {};
-  const probabilities = {};
-  for (const [key, ans] of Object.entries(result.answers)) {
-    if (ans.type === "noul") {
-      verdicts[key] = ans.noul >= (options.defaultThreshold ?? 0.5);
-      probabilities[key] = ans.noul;
-    } else if (ans.type === "choice") {
-      verdicts[key] = ans.choice;
-      probabilities[key] = ans.confidence;
-    } else if (ans.type === "score") {
-      verdicts[key] = ans.score;
-      probabilities[key] = ans.confidence ?? 1;
+  const expandedQuestions = {};
+  for (const [key, q] of Object.entries(questions)) {
+    expandedQuestions[key] = q;
+    if (q.type === "choice") {
+      const criteria = q.criteria || {};
+      for (const [optKey, optDesc] of Object.entries(criteria)) {
+        expandedQuestions[`opt_${key}_${optKey}`] = {
+          type: "noul",
+          instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
+          criteria: { true: optKey, false: `not ${optKey}` }
+        };
+      }
+    } else if (q.type === "score") {
+      const criteria = q.criteria || [];
+      for (let i = 0;i < criteria.length; i++) {
+        expandedQuestions[`lvl_${key}_${i}`] = {
+          type: "noul",
+          instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
+          criteria: { true: criteria[i], false: `not ${criteria[i]}` }
+        };
+      }
     }
   }
+  const result = await rawJevJudgment(state, expandedQuestions, options);
+  const synthesizedAnswers = {};
+  const verdicts = {};
+  const probabilities = {};
+  for (const [key, q] of Object.entries(questions)) {
+    const directAns = result.answers[key];
+    if (q.type === "choice") {
+      if (directAns && directAns.type === "choice" && typeof directAns.choice === "string") {
+        synthesizedAnswers[key] = directAns;
+        verdicts[key] = directAns.choice;
+        probabilities[key] = directAns.confidence;
+      } else {
+        const criteriaKeys = Object.keys(q.criteria || {});
+        const scores = criteriaKeys.map((cKey) => ({
+          key: cKey,
+          p: result.answers[`opt_${key}_${cKey}`]?.noul ?? 0
+        }));
+        scores.sort((a, b) => b.p - a.p);
+        const best = scores[0] || { key: criteriaKeys[0] || "yes", p: 0.8 };
+        const sum = scores.reduce((acc, s) => acc + s.p, 0) || 1;
+        const choiceAns = {
+          type: "choice",
+          choice: best.key,
+          confidence: best.p,
+          probabilities: Object.fromEntries(scores.map((s) => [s.key, Math.round(s.p / sum * 100) / 100]))
+        };
+        synthesizedAnswers[key] = choiceAns;
+        verdicts[key] = best.key;
+        probabilities[key] = best.p;
+      }
+    } else if (q.type === "score") {
+      if (directAns && directAns.type === "score" && typeof directAns.score === "number") {
+        synthesizedAnswers[key] = directAns;
+        verdicts[key] = directAns.score;
+        probabilities[key] = directAns.confidence ?? 1;
+      } else {
+        const levels = q.criteria || [];
+        const scores = levels.map((lvl, idx) => ({
+          idx,
+          lvl,
+          p: result.answers[`lvl_${key}_${idx}`]?.noul ?? 0
+        }));
+        const sum = scores.reduce((acc, s) => acc + s.p, 0) || 1;
+        const expectedScore = scores.reduce((acc, s) => acc + s.idx * (s.p / sum), 0);
+        const maxProb = Math.max(...scores.map((s) => s.p), 0.7);
+        const scoreAns = {
+          type: "score",
+          score: Math.round(expectedScore * 100) / 100,
+          confidence: maxProb,
+          legend: Object.fromEntries(levels.map((lvl, idx) => [String(idx), lvl])),
+          probabilities: Object.fromEntries(scores.map((s) => [String(s.idx), Math.round(s.p / sum * 100) / 100]))
+        };
+        synthesizedAnswers[key] = scoreAns;
+        verdicts[key] = Math.round(expectedScore * 100) / 100;
+        probabilities[key] = maxProb;
+      }
+    } else {
+      const noulAns = directAns;
+      const p = noulAns?.noul ?? 0;
+      const isTrue = p >= (options.defaultThreshold ?? 0.5);
+      synthesizedAnswers[key] = {
+        type: "noul",
+        noul: p,
+        bool: p
+      };
+      verdicts[key] = isTrue;
+      probabilities[key] = p;
+    }
+  }
+  const originalKeys = Object.keys(questions);
+  const primaryKey = originalKeys[0];
+  const primaryAns = primaryKey ? synthesizedAnswers[primaryKey] : undefined;
   let verdict = false;
   let probability;
   let confidence;
-  if (firstAnswer) {
-    verdict = verdicts[firstKey] ?? false;
-    if (firstAnswer.type === "noul") {
-      probability = firstAnswer.noul;
-    } else if (firstAnswer.type === "choice") {
-      confidence = firstAnswer.confidence;
-    } else if (firstAnswer.type === "score") {
-      confidence = firstAnswer.confidence;
+  if (primaryKey && primaryAns) {
+    verdict = verdicts[primaryKey] ?? false;
+    if (primaryAns.type === "noul") {
+      probability = primaryAns.noul;
+    } else if (primaryAns.type === "choice") {
+      confidence = primaryAns.confidence;
+    } else if (primaryAns.type === "score") {
+      confidence = primaryAns.confidence;
     }
   }
   return {
@@ -1088,7 +1165,7 @@ async function judge(state, questionInput, options = {}) {
     confidence,
     verdicts,
     probabilities,
-    answers: result.answers,
+    answers: synthesizedAnswers,
     questions,
     state,
     raw: result
@@ -1228,12 +1305,22 @@ ${testsTrunc.text}`;
   };
   const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
-  const correctness = ans.correctness?.score ?? 0;
-  const specMatch = ans.spec_match?.score ?? 0;
-  const testGap = ans.test_gap?.score ?? 2;
-  const blastRadius = ans.blast_radius?.score ?? 2;
+  const parseScore = (val, def) => {
+    if (!val || typeof val !== "object")
+      return def;
+    const obj = val;
+    if (typeof obj.score === "number")
+      return obj.score;
+    if (typeof obj.noul === "number")
+      return Math.round(obj.noul * 2 * 100) / 100;
+    return def;
+  };
+  const correctness = parseScore(ans.correctness, 0);
+  const specMatch = parseScore(ans.spec_match, 0);
+  const testGap = parseScore(ans.test_gap, 2);
+  const blastRadius = parseScore(ans.blast_radius, 2);
   const safeToApply = ans.safe_to_apply?.noul ?? 0;
-  const minConf = Math.min(ans.correctness?.confidence ?? 1, ans.spec_match?.confidence ?? 1, ans.test_gap?.confidence ?? 1, ans.blast_radius?.confidence ?? 1);
+  const minConf = Math.min(ans.correctness?.confidence ?? (ans.correctness?.noul !== undefined ? 0.8 : 1), ans.spec_match?.confidence ?? (ans.spec_match?.noul !== undefined ? 0.8 : 1), ans.test_gap?.confidence ?? (ans.test_gap?.noul !== undefined ? 0.8 : 1), ans.blast_radius?.confidence ?? (ans.blast_radius?.noul !== undefined ? 0.8 : 1));
   const composite = reviewComposite({
     correctness,
     specMatch,
@@ -1293,14 +1380,15 @@ ${item.text}`).join(`
   }
   const claimQuestions = {};
   for (let i = 0;i < claims.length; i++) {
-    claimQuestions[`claim_${i}`] = {
-      type: "choice",
-      instructions: `Evaluate whether the evidence supports, contradicts, or says nothing about this claim: "${claims[i]}"`,
-      criteria: {
-        supports: "The evidence clearly supports and confirms the claim",
-        contradicts: "The evidence contradicts, disproves, or shows failure for the claim",
-        says_nothing: "The evidence neither supports nor contradicts the claim (or is silent)"
-      }
+    claimQuestions[`supp_${i}`] = {
+      type: "noul",
+      instructions: `Does the evidence directly confirm and support this completion claim: "${claims[i]}"?`,
+      criteria: { true: "evidence confirms the claim", false: "evidence does not confirm or is silent" }
+    };
+    claimQuestions[`contra_${i}`] = {
+      type: "noul",
+      instructions: `Does the evidence contradict, disprove, or conflict with this completion claim: "${claims[i]}"?`,
+      criteria: { true: "evidence contradicts", false: "evidence does not contradict" }
     };
   }
   const state = `EVIDENCE FOR COMPLETION CLAIMS:
@@ -1312,17 +1400,32 @@ ${evidenceText}`;
   const autoAccept = input.auto_accept ?? 0.8;
   const reviewAt = input.review_at ?? Math.min(0.5, autoAccept);
   for (let i = 0;i < claims.length; i++) {
-    const ans = rawClaims.answers[`claim_${i}`];
-    const choice = ans?.choice ?? "says_nothing";
-    const confidence = ans?.confidence ?? 0;
-    const probs = ans?.probabilities ?? {};
+    const supp = rawClaims.answers[`supp_${i}`]?.noul ?? 0;
+    const contra = rawClaims.answers[`contra_${i}`]?.noul ?? 0;
+    const relChoice = rawClaims.answers[`claim_${i}`]?.choice;
     let verdict = "unsupported";
-    if (choice === "supports")
+    let confidence = 0.5;
+    if (relChoice === "supports") {
       verdict = "verified";
-    else if (choice === "contradicts")
+      confidence = rawClaims.answers[`claim_${i}`]?.confidence ?? 0.85;
+    } else if (relChoice === "contradicts") {
       verdict = "contradicted";
-    else
+      confidence = rawClaims.answers[`claim_${i}`]?.confidence ?? 0.85;
+    } else if (relChoice === "says_nothing") {
       verdict = "unsupported";
+      confidence = 0.5;
+    } else {
+      if (supp >= 0.65 && contra < 0.4) {
+        verdict = "verified";
+        confidence = supp;
+      } else if (contra >= 0.6 && supp < 0.4) {
+        verdict = "contradicted";
+        confidence = contra;
+      } else {
+        verdict = "unsupported";
+        confidence = Math.max(0.5, 1 - Math.abs(supp - contra));
+      }
+    }
     if (verdict === "contradicted") {
       contradictedCount++;
       allVerified = false;
@@ -1333,7 +1436,11 @@ ${evidenceText}`;
     claimResults.push({
       claim: claims[i],
       verdict,
-      probabilities: probs,
+      probabilities: {
+        verified: supp,
+        contradicted: contra,
+        unsupported: Math.max(0, 1 - supp - contra)
+      },
       confidence,
       action
     });
@@ -1381,6 +1488,16 @@ ${input.context}` : "");
         confirm: "pause and ask human operator to confirm",
         block: "block execution and require a safer alternative"
       }
+    },
+    is_safe: {
+      type: "noul",
+      instructions: "Is this action completely safe, benign, and read-only?",
+      criteria: { true: "safe and benign", false: "risky or destructive" }
+    },
+    is_destructive: {
+      type: "noul",
+      instructions: "Is this action destructive, risky, or dangerous (could delete files, drop data, or alter state)?",
+      criteria: { true: "destructive or risky", false: "safe" }
     }
   };
   const raw = await rawJevJudgment(state, questions, context?.options);
@@ -1388,13 +1505,35 @@ ${input.context}` : "");
   const recAns = ans.recommendation;
   const riskAns = ans.risk;
   const prodAns = ans.touches_prod;
-  const recChoice = recAns?.choice ?? "confirm";
-  const recommendation = recChoice === "allow" || recChoice === "block" ? recChoice : "confirm";
+  let recommendation = "confirm";
+  const scoreRisk = riskAns?.score;
+  const isSafe = ans.is_safe?.noul;
+  const isDestructive = ans.is_destructive?.noul;
+  let rawRisk = 1.5;
+  if (typeof scoreRisk === "number") {
+    rawRisk = scoreRisk;
+  } else if (isSafe !== undefined && isDestructive !== undefined) {
+    rawRisk = isDestructive * 3 * (1 - isSafe * 0.5);
+  } else if (riskAns?.noul !== undefined) {
+    rawRisk = riskAns.noul * 3;
+  }
+  const risk_score = Math.round(rawRisk * 100) / 100;
+  const touches_prod = (prodAns?.noul ?? 0) >= 0.5;
+  if (recAns?.choice === "allow" || recAns?.choice === "block") {
+    recommendation = recAns.choice;
+  } else if (risk_score >= 2.5 || touches_prod && risk_score >= 2) {
+    recommendation = "block";
+  } else if (risk_score >= 1.5 || touches_prod) {
+    recommendation = "confirm";
+  } else {
+    recommendation = "allow";
+  }
   return {
+    action: input.action,
     recommendation,
-    confidence: recAns?.confidence ?? 0.5,
-    risk_score: riskAns?.score ?? 1.5,
-    touches_prod: (prodAns?.noul ?? 0) >= 0.5,
+    confidence: recAns?.confidence ?? (recAns?.noul ?? 0.8),
+    risk_score,
+    touches_prod,
     touches_prod_probability: prodAns?.noul ?? 0
   };
 }
@@ -1485,8 +1624,8 @@ var MAX_SCREEN_CHARS = 50000;
 var MAX_EXTRACT_DOC_CHARS = 50000;
 var MAX_AUDIT_SOURCE_CHARS = 50000;
 var SUBJECT_CRITERIA = {
-  true: "The evidence reports on exactly what this claim asserts (the same check, run, file, metric, or object)",
-  false: "The evidence is silent about it, or reports only on a different check, run, process, or object"
+  true: "The evidence contains data or reports on the same subject, check, run, file, metric, or object that this claim discusses",
+  false: "The evidence reports only on a completely different, unrelated check, run, process, or object"
 };
 async function verifyClaims(input, context) {
   const claims = (input.claims || []).slice(0, MAX_VERIFY_CLAIMS).map((c) => truncate2(c, 2000).text);
@@ -1507,23 +1646,24 @@ ${item.text}`).join(`
     evidenceText = truncate2(evidenceText, MAX_VERIFY_EVIDENCE_CHARS).text;
   }
   const autoAccept = input.auto_accept ?? 0.8;
-  const subjectAt = input.subject_at ?? 0.5;
+  const subjectAt = input.subject_at ?? 0.35;
   const state = `DOCUMENT EVIDENCE:
 ${evidenceText}`;
   const questions = {};
   for (let i = 0;i < claims.length; i++) {
-    questions[`rel_${i}`] = {
-      type: "choice",
-      instructions: `Does the evidence support, contradict, or say nothing about this claim: "${claims[i]}"?`,
-      criteria: {
-        supports: "The evidence clearly supports and confirms the claim",
-        contradicts: "The evidence contradicts, disproves, or opposes the claim",
-        says_nothing: "The evidence neither supports nor contradicts the claim (silent or irrelevant)"
-      }
+    questions[`supp_${i}`] = {
+      type: "noul",
+      instructions: `Does the evidence directly confirm and support this factual claim: "${claims[i]}"?`,
+      criteria: { true: "evidence confirms the claim", false: "evidence does not confirm or is silent" }
+    };
+    questions[`contra_${i}`] = {
+      type: "noul",
+      instructions: `Does the evidence contradict or disprove this factual claim: "${claims[i]}"?`,
+      criteria: { true: "evidence contradicts", false: "evidence does not contradict" }
     };
     questions[`subj_${i}`] = {
       type: "noul",
-      instructions: `Does the evidence report on exactly what this claim asserts: "${claims[i]}"?`,
+      instructions: `The evidence contains data or results regarding the very subject, metric, run, file, or object that this claim discusses: "${claims[i]}"`,
       criteria: SUBJECT_CRITERIA
     };
   }
@@ -1534,21 +1674,42 @@ ${evidenceText}`;
   let contradicted = 0;
   let unsupported = 0;
   for (let i = 0;i < claims.length; i++) {
-    const relAns = ans[`rel_${i}`];
+    const suppAns = ans[`supp_${i}`];
+    const contraAns = ans[`contra_${i}`];
     const subjAns = ans[`subj_${i}`];
-    const rawChoice = relAns?.choice ?? "says_nothing";
-    const confidence = relAns?.confidence ?? 0;
+    const relAns = ans[`rel_${i}`];
     const sameSubject = subjAns?.noul ?? 1;
-    let relationVerdict = "unsupported";
-    if (rawChoice === "supports") {
-      relationVerdict = "verified";
-    } else if (rawChoice === "contradicts") {
-      relationVerdict = "contradicted";
+    let verdict = "unsupported";
+    let confidence = 0.5;
+    const supp = suppAns?.noul ?? 0;
+    const contra = contraAns?.noul ?? 0;
+    const isOffSubject = (relAns?.choice === "contradicts" || contra >= 0.6 && supp < 0.4) && sameSubject < subjectAt && contra < 0.85;
+    if (relAns?.choice === "supports") {
+      verdict = "verified";
+      confidence = relAns.confidence || 0.85;
+    } else if (relAns?.choice === "contradicts") {
+      verdict = isOffSubject ? "unsupported" : "contradicted";
+      confidence = relAns.confidence || 0.85;
+    } else if (relAns?.choice === "says_nothing") {
+      verdict = "unsupported";
+      confidence = relAns.confidence || 0.5;
     } else {
-      relationVerdict = "unsupported";
+      if (supp >= 0.65 && contra < 0.4) {
+        verdict = "verified";
+        confidence = supp;
+      } else if (contra >= 0.6 && supp < 0.4) {
+        if (!isOffSubject) {
+          verdict = "contradicted";
+          confidence = contra;
+        } else {
+          verdict = "unsupported";
+          confidence = 1 - sameSubject;
+        }
+      } else {
+        verdict = "unsupported";
+        confidence = Math.max(0.5, 1 - Math.abs(supp - contra));
+      }
     }
-    const offSubject = relationVerdict === "contradicted" && sameSubject < subjectAt;
-    const verdict = offSubject ? "unsupported" : relationVerdict;
     if (verdict === "verified")
       verified++;
     else if (verdict === "contradicted")
@@ -1559,8 +1720,12 @@ ${evidenceText}`;
     claimResults.push({
       claim: claims[i],
       verdict,
-      ...offSubject ? { relation_verdict: relationVerdict } : {},
-      probabilities: relAns?.probabilities ?? {},
+      ...isOffSubject ? { relation_verdict: "contradicted" } : {},
+      probabilities: relAns?.probabilities ?? {
+        verified: suppAns?.noul ?? 0,
+        contradicted: contraAns?.noul ?? 0,
+        unsupported: Math.max(0, 1 - (suppAns?.noul ?? 0) - (contraAns?.noul ?? 0))
+      },
       confidence,
       same_subject: sameSubject,
       action
@@ -1695,6 +1860,13 @@ async function extractFields(input, context) {
       instructions: `Which candidate value is the correct '${f.id}' (${f.description}) from the document?`,
       criteria
     };
+    for (let i = 0;i < matches.length; i++) {
+      questions[`match_${f.id}_${i}`] = {
+        type: "noul",
+        instructions: `In this document, is "${matches[i]}" the correct '${f.id}' (${f.description})?`,
+        criteria: { true: "correct value", false: "incorrect or wrong value" }
+      };
+    }
   }
   const questionKeys = Object.keys(questions);
   if (questionKeys.length === 0) {
@@ -1708,11 +1880,26 @@ ${doc}`;
     if (results[f.id])
       continue;
     const qAns = ans[`field_${f.id}`];
-    const choice = qAns?.choice ?? "none_matched";
-    const confidence = qAns?.confidence ?? 0;
+    let choice = qAns?.choice;
+    let confidence = qAns?.confidence ?? 0;
     const probs = qAns?.probabilities ?? {};
-    const topProb = probs[choice] ?? confidence;
     const matches = fieldMatches[f.id] || [];
+    if (!choice || !choice.startsWith("match_")) {
+      const matchScores = matches.map((m, idx) => ({
+        idx,
+        val: m,
+        p: ans[`match_${f.id}_${idx}`]?.noul ?? 0
+      }));
+      matchScores.sort((a, b) => b.p - a.p);
+      if (matchScores.length > 0 && matchScores[0].p >= 0.5) {
+        choice = `match_${matchScores[0].idx}`;
+        confidence = matchScores[0].p;
+      } else {
+        choice = "none_matched";
+        confidence = 0.5;
+      }
+    }
+    const topProb = probs[choice] ?? confidence;
     let value = null;
     let status = "not_found";
     if (choice.startsWith("match_")) {
@@ -2117,27 +2304,41 @@ ${candidateDescriptions}`;
       criteria
     }
   };
+  for (const c of candidates) {
+    questions[`cand_${c.id}_best`] = {
+      type: "noul",
+      instructions: `Is candidate "${c.id}" (${c.description}) the best recommendation satisfying the decision, evidence, and priorities?`,
+      criteria: { true: "best recommendation", false: "sub-optimal or fails priorities" }
+    };
+  }
   const requirements = (input.requirements || []).slice(0, MAX_REQUIREMENTS);
   for (let reqIdx = 0;reqIdx < requirements.length; reqIdx++) {
     const req = requirements[reqIdx];
     for (const c of candidates) {
       questions[`check_${c.id}_req_${reqIdx}`] = {
-        type: "choice",
+        type: "noul",
         instructions: `Does candidate "${c.id}" satisfy this requirement: "${req}"?`,
-        criteria: {
-          supported: "The evidence clearly indicates this candidate satisfies the requirement",
-          contradicted: "The evidence indicates this candidate fails or violates this requirement",
-          unknown: "The evidence is insufficient to verify whether this requirement is satisfied"
-        }
+        criteria: { true: "evidence confirms satisfied", false: "evidence indicates fails or violates" }
       };
     }
   }
   const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const choiceAns = ans.selected_candidate;
-  const selected = choiceAns?.choice ?? candidates[0].id;
-  const confidence = choiceAns?.confidence ?? 0;
-  const probabilities = choiceAns?.probabilities ?? {};
+  let selected = choiceAns?.choice;
+  let confidence = choiceAns?.confidence ?? 0;
+  let probabilities = choiceAns?.probabilities ?? {};
+  if (!selected || !candidates.some((c) => c.id === selected)) {
+    const candScores = candidates.map((c) => ({
+      id: c.id,
+      p: ans[`cand_${c.id}_best`]?.noul ?? 0
+    }));
+    candScores.sort((a, b) => b.p - a.p);
+    selected = candScores[0]?.id || candidates[0].id;
+    confidence = candScores[0]?.p || 0.8;
+    const sum = candScores.reduce((acc, s) => acc + s.p, 0) || 1;
+    probabilities = Object.fromEntries(candScores.map((s) => [s.id, Math.round(s.p / sum * 100) / 100]));
+  }
   const escaped = Boolean(DECIDE_ESCAPE_HATCHES[selected]);
   const checks = [];
   const warnings = [];
@@ -2145,8 +2346,18 @@ ${candidateDescriptions}`;
     for (const c of candidates) {
       const qKey = `check_${c.id}_req_${reqIdx}`;
       const checkAns = ans[qKey];
-      const statusRaw = checkAns?.choice ?? "unknown";
-      const status = statusRaw === "supported" || statusRaw === "contradicted" ? statusRaw : "unknown";
+      let status = "unknown";
+      if (checkAns?.choice === "supported" || checkAns?.choice === "contradicted") {
+        status = checkAns.choice;
+      } else if (checkAns?.noul !== undefined) {
+        const p = checkAns.noul;
+        if (p >= 0.65)
+          status = "supported";
+        else if (p <= 0.35)
+          status = "contradicted";
+        else
+          status = "unknown";
+      }
       checks.push({
         candidate: c.id,
         requirement: reqIdx + 1,
@@ -2207,11 +2418,18 @@ ${candidateText}`;
       criteria
     }
   };
+  for (const c of candidateEntries) {
+    questions[`cand_${c.id}`] = {
+      type: "noul",
+      instructions: `Is this candidate snippet relevant and responsive to the search query "${queryTrunc}": "${c.text.slice(0, 200)}"?`,
+      criteria: { true: "relevant", false: "irrelevant" }
+    };
+  }
   const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const existsProb = ans.exists?.noul ?? 0;
   const choiceAns = ans.best_candidate;
-  const probs = choiceAns?.probabilities ?? {};
+  const choiceProbs = choiceAns?.probabilities ?? {};
   let existsVerdict = "absent";
   if (existsProb >= 0.7)
     existsVerdict = "answered";
@@ -2222,7 +2440,7 @@ ${candidateText}`;
   const ranked = candidateEntries.map((c) => ({
     id: c.id,
     text: c.text,
-    probability: probs[c.id] ?? 0
+    probability: choiceProbs[c.id] ?? ans[`cand_${c.id}`]?.noul ?? 0
   })).sort((a, b) => b.probability - a.probability).slice(0, topK);
   return {
     exists: existsProb,
@@ -2261,13 +2479,20 @@ ${candidateText}`;
       criteria
     }
   };
+  for (const c of candidateEntries) {
+    questions[`cand_${c.id}`] = {
+      type: "noul",
+      instructions: `Is this candidate snippet relevant and responsive to the search query "${queryTrunc}": "${c.text.slice(0, 200)}"?`,
+      criteria: { true: "relevant", false: "irrelevant" }
+    };
+  }
   const raw = await rawJevJudgment(state, questions, context?.options);
   const choiceAns = raw.answers.relevance;
-  const probs = choiceAns?.probabilities ?? {};
+  const choiceProbs = choiceAns?.probabilities ?? {};
   const ranked = candidateEntries.map((c) => ({
     id: c.id,
     text: c.text,
-    relevance: probs[c.id] ?? 0
+    relevance: choiceProbs[c.id] ?? raw.answers[`cand_${c.id}`]?.noul ?? 0
   })).sort((a, b) => b.relevance - a.relevance).slice(0, topK).map((c, idx) => ({
     rank: idx + 1,
     id: c.id,
@@ -2286,6 +2511,16 @@ ${passageATrunc}
 PASSAGE B:
 ${passageBTrunc}`;
   const questions = {
+    same_fact: {
+      type: "noul",
+      instructions: "Do Passage A and Passage B state the same factual assertions?",
+      criteria: { true: "same fact", false: "different or contradictory" }
+    },
+    contradicts: {
+      type: "noul",
+      instructions: "Do Passage A and Passage B directly contradict each other?",
+      criteria: { true: "contradicts", false: "does not contradict" }
+    },
     overall_relation: {
       type: "choice",
       instructions: "How do Passage A and Passage B relate in their substantive assertions?",
@@ -2295,39 +2530,72 @@ ${passageBTrunc}`;
   const aspects = (input.aspects || []).slice(0, 10);
   for (let i = 0;i < aspects.length; i++) {
     const asp = aspects[i];
-    questions[`aspect_${i}`] = {
-      type: "choice",
-      instructions: `How do the passages compare regarding the aspect '${asp}'?`,
-      criteria: ASPECT_RELATIONS
+    questions[`asp_${i}_same`] = {
+      type: "noul",
+      instructions: `Regarding aspect '${asp}', do Passage A and Passage B assert the same facts?`
+    };
+    questions[`asp_${i}_contra`] = {
+      type: "noul",
+      instructions: `Regarding aspect '${asp}', do Passage A and Passage B contradict each other?`
     };
   }
   const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const overallAns = ans.overall_relation;
-  const choiceRaw = overallAns?.choice ?? "different_facts";
-  const confidence = overallAns?.confidence ?? 0;
-  const probs = overallAns?.probabilities ?? {};
-  const relation = choiceRaw === "same_fact" || choiceRaw === "contradicts" ? choiceRaw : "different_facts";
+  let relation = "different_facts";
+  let confidence = 0.5;
+  if (overallAns?.choice === "same_fact" || overallAns?.choice === "contradicts") {
+    relation = overallAns.choice;
+    confidence = overallAns.confidence || 0.85;
+  } else {
+    const sameFact = ans.same_fact?.noul ?? 0;
+    const contra = ans.contradicts?.noul ?? 0;
+    if (contra >= 0.6 && sameFact < 0.4) {
+      relation = "contradicts";
+      confidence = contra;
+    } else if (sameFact >= 0.65 && contra < 0.4) {
+      relation = "same_fact";
+      confidence = sameFact;
+    } else {
+      relation = "different_facts";
+      confidence = Math.max(0.5, 1 - Math.max(sameFact, contra));
+    }
+  }
   const action = confidence >= autoAccept ? "auto" : "review";
   let aspectResults = undefined;
   if (aspects.length > 0) {
     aspectResults = {};
     for (let i = 0;i < aspects.length; i++) {
       const aspName = aspects[i];
-      const aspAns = ans[`aspect_${i}`];
-      const aspChoice = aspAns?.choice ?? "different_facts";
-      const aspRelation = aspChoice === "same_fact" || aspChoice === "contradicts" ? aspChoice : "different_facts";
+      const aspSame = ans[`asp_${i}_same`]?.noul ?? 0;
+      const aspContra = ans[`asp_${i}_contra`]?.noul ?? 0;
+      let aspRelation = "different_facts";
+      let aspConf = 0.5;
+      if (aspContra >= 0.6 && aspSame < 0.4) {
+        aspRelation = "contradicts";
+        aspConf = aspContra;
+      } else if (aspSame >= 0.65 && aspContra < 0.4) {
+        aspRelation = "same_fact";
+        aspConf = aspSame;
+      } else {
+        aspRelation = "different_facts";
+        aspConf = Math.max(0.5, 1 - Math.max(aspSame, aspContra));
+      }
       aspectResults[aspName] = {
         relation: aspRelation,
-        confidence: aspAns?.confidence ?? 0,
-        probabilities: aspAns?.probabilities ?? {}
+        confidence: aspConf,
+        probabilities: { same_fact: aspSame, contradicts: aspContra }
       };
     }
   }
   return {
     relation,
     confidence,
-    probabilities: probs,
+    probabilities: overallAns?.probabilities ?? {
+      same_fact: ans.same_fact?.noul ?? 0,
+      contradicts: ans.contradicts?.noul ?? 0,
+      different_facts: Math.max(0, 1 - (ans.same_fact?.noul ?? 0) - (ans.contradicts?.noul ?? 0))
+    },
     action,
     aspects: aspectResults
   };
@@ -8182,7 +8450,9 @@ async function handleRequest(req) {
     try {
       const output = await tool.handler(validation.data);
       const config = resolveConfig();
-      const formatted = formatToolResult(name, output, config.outputFormat);
+      const rawArgs = params?.arguments ?? {};
+      const requestedFormat = rawArgs.format || rawArgs._format;
+      const formatted = formatToolResult(name, output, requestedFormat || config.outputFormat);
       sendResult(id, {
         content: [
           {

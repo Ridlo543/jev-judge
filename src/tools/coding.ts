@@ -123,17 +123,25 @@ export async function reviewDiff(
   const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
 
-  const correctness = (ans.correctness as ScoreAnswer)?.score ?? 0;
-  const specMatch = (ans.spec_match as ScoreAnswer)?.score ?? 0;
-  const testGap = (ans.test_gap as ScoreAnswer)?.score ?? 2;
-  const blastRadius = (ans.blast_radius as ScoreAnswer)?.score ?? 2;
+  const parseScore = (val: unknown, def: number): number => {
+    if (!val || typeof val !== "object") return def;
+    const obj = val as Record<string, unknown>;
+    if (typeof obj.score === "number") return obj.score;
+    if (typeof obj.noul === "number") return Math.round(obj.noul * 2.0 * 100) / 100;
+    return def;
+  };
+
+  const correctness = parseScore(ans.correctness, 0);
+  const specMatch = parseScore(ans.spec_match, 0);
+  const testGap = parseScore(ans.test_gap, 2);
+  const blastRadius = parseScore(ans.blast_radius, 2);
   const safeToApply = (ans.safe_to_apply as NoulAnswer)?.noul ?? 0;
 
   const minConf = Math.min(
-    (ans.correctness as ScoreAnswer)?.confidence ?? 1.0,
-    (ans.spec_match as ScoreAnswer)?.confidence ?? 1.0,
-    (ans.test_gap as ScoreAnswer)?.confidence ?? 1.0,
-    (ans.blast_radius as ScoreAnswer)?.confidence ?? 1.0,
+    (ans.correctness as ScoreAnswer)?.confidence ?? ((ans.correctness as NoulAnswer)?.noul !== undefined ? 0.8 : 1.0),
+    (ans.spec_match as ScoreAnswer)?.confidence ?? ((ans.spec_match as NoulAnswer)?.noul !== undefined ? 0.8 : 1.0),
+    (ans.test_gap as ScoreAnswer)?.confidence ?? ((ans.test_gap as NoulAnswer)?.noul !== undefined ? 0.8 : 1.0),
+    (ans.blast_radius as ScoreAnswer)?.confidence ?? ((ans.blast_radius as NoulAnswer)?.noul !== undefined ? 0.8 : 1.0),
   );
 
   const composite = reviewComposite({
@@ -208,14 +216,15 @@ export async function gatePatch(
 
   const claimQuestions: Questions = {};
   for (let i = 0; i < claims.length; i++) {
-    claimQuestions[`claim_${i}`] = {
-      type: "choice",
-      instructions: `Evaluate whether the evidence supports, contradicts, or says nothing about this claim: "${claims[i]}"`,
-      criteria: {
-        supports: "The evidence clearly supports and confirms the claim",
-        contradicts: "The evidence contradicts, disproves, or shows failure for the claim",
-        says_nothing: "The evidence neither supports nor contradicts the claim (or is silent)",
-      },
+    claimQuestions[`supp_${i}`] = {
+      type: "noul",
+      instructions: `Does the evidence directly confirm and support this completion claim: "${claims[i]}"?`,
+      criteria: { true: "evidence confirms the claim", false: "evidence does not confirm or is silent" },
+    };
+    claimQuestions[`contra_${i}`] = {
+      type: "noul",
+      instructions: `Does the evidence contradict, disprove, or conflict with this completion claim: "${claims[i]}"?`,
+      criteria: { true: "evidence contradicts", false: "evidence does not contradict" },
     };
   }
 
@@ -230,15 +239,34 @@ export async function gatePatch(
   const reviewAt = input.review_at ?? Math.min(0.5, autoAccept);
 
   for (let i = 0; i < claims.length; i++) {
-    const ans = rawClaims.answers[`claim_${i}`] as ChoiceAnswer | undefined;
-    const choice = ans?.choice ?? "says_nothing";
-    const confidence = ans?.confidence ?? 0;
-    const probs = ans?.probabilities ?? {};
+    const supp = (rawClaims.answers[`supp_${i}`] as NoulAnswer | undefined)?.noul ?? 0;
+    const contra = (rawClaims.answers[`contra_${i}`] as NoulAnswer | undefined)?.noul ?? 0;
+    const relChoice = (rawClaims.answers[`claim_${i}`] as ChoiceAnswer | undefined)?.choice;
 
     let verdict: "verified" | "contradicted" | "unsupported" = "unsupported";
-    if (choice === "supports") verdict = "verified";
-    else if (choice === "contradicts") verdict = "contradicted";
-    else verdict = "unsupported";
+    let confidence = 0.5;
+
+    if (relChoice === "supports") {
+      verdict = "verified";
+      confidence = (rawClaims.answers[`claim_${i}`] as ChoiceAnswer | undefined)?.confidence ?? 0.85;
+    } else if (relChoice === "contradicts") {
+      verdict = "contradicted";
+      confidence = (rawClaims.answers[`claim_${i}`] as ChoiceAnswer | undefined)?.confidence ?? 0.85;
+    } else if (relChoice === "says_nothing") {
+      verdict = "unsupported";
+      confidence = 0.5;
+    } else {
+      if (supp >= 0.65 && contra < 0.40) {
+        verdict = "verified";
+        confidence = supp;
+      } else if (contra >= 0.60 && supp < 0.40) {
+        verdict = "contradicted";
+        confidence = contra;
+      } else {
+        verdict = "unsupported";
+        confidence = Math.max(0.5, 1 - Math.abs(supp - contra));
+      }
+    }
 
     if (verdict === "contradicted") {
       contradictedCount++;
@@ -252,7 +280,11 @@ export async function gatePatch(
     claimResults.push({
       claim: claims[i],
       verdict,
-      probabilities: probs,
+      probabilities: {
+        verified: supp,
+        contradicted: contra,
+        unsupported: Math.max(0, 1 - supp - contra),
+      },
       confidence,
       action,
     });
@@ -311,6 +343,16 @@ export async function screenAction(
         block: "block execution and require a safer alternative",
       },
     },
+    is_safe: {
+      type: "noul",
+      instructions: "Is this action completely safe, benign, and read-only?",
+      criteria: { true: "safe and benign", false: "risky or destructive" },
+    },
+    is_destructive: {
+      type: "noul",
+      instructions: "Is this action destructive, risky, or dangerous (could delete files, drop data, or alter state)?",
+      criteria: { true: "destructive or risky", false: "safe" },
+    },
   };
 
   const raw = await rawJevJudgment(state, questions, context?.options);
@@ -320,15 +362,38 @@ export async function screenAction(
   const riskAns = ans.risk as ScoreAnswer | undefined;
   const prodAns = ans.touches_prod as NoulAnswer | undefined;
 
-  const recChoice = recAns?.choice ?? "confirm";
-  const recommendation =
-    recChoice === "allow" || recChoice === "block" ? recChoice : "confirm";
+  let recommendation: "allow" | "confirm" | "block" = "confirm";
+  const scoreRisk = (riskAns as ScoreAnswer)?.score;
+  const isSafe = (ans.is_safe as NoulAnswer | undefined)?.noul;
+  const isDestructive = (ans.is_destructive as NoulAnswer | undefined)?.noul;
+
+  let rawRisk = 1.5;
+  if (typeof scoreRisk === "number") {
+    rawRisk = scoreRisk;
+  } else if (isSafe !== undefined && isDestructive !== undefined) {
+    rawRisk = isDestructive * 3.0 * (1 - isSafe * 0.5);
+  } else if ((riskAns as NoulAnswer)?.noul !== undefined) {
+    rawRisk = (riskAns as NoulAnswer).noul * 3.0;
+  }
+  const risk_score = Math.round(rawRisk * 100) / 100;
+  const touches_prod = (prodAns?.noul ?? 0) >= 0.5;
+
+  if (recAns?.choice === "allow" || recAns?.choice === "block") {
+    recommendation = recAns.choice;
+  } else if (risk_score >= 2.5 || (touches_prod && risk_score >= 2.0)) {
+    recommendation = "block";
+  } else if (risk_score >= 1.5 || touches_prod) {
+    recommendation = "confirm";
+  } else {
+    recommendation = "allow";
+  }
 
   return {
+    action: input.action,
     recommendation,
-    confidence: recAns?.confidence ?? 0.5,
-    risk_score: riskAns?.score ?? 1.5,
-    touches_prod: (prodAns?.noul ?? 0) >= 0.5,
+    confidence: recAns?.confidence ?? ((recAns as NoulAnswer)?.noul ?? 0.8),
+    risk_score,
+    touches_prod,
     touches_prod_probability: prodAns?.noul ?? 0,
   };
 }

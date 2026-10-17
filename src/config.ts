@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 export type JevProtocol = "chat-completions" | "typesafe-direct";
-export type JevOutputFormat = "markdown" | "json";
+export type JevOutputFormat = "markdown" | "markdown-verbose" | "json";
 
 export interface JevResolvedConfig {
   protocol: JevProtocol;
@@ -180,7 +180,12 @@ export function resolveConfig(explicit: JevConfigInput = {}): JevResolvedConfig 
     env.JEV_OUTPUT_FORMAT ||
     "markdown"
   ).toLowerCase();
-  const outputFormat: JevOutputFormat = rawFormat === "json" ? "json" : "markdown";
+  const outputFormat: JevOutputFormat =
+    rawFormat === "json"
+      ? "json"
+      : rawFormat === "markdown-verbose" || rawFormat === "verbose"
+        ? "markdown-verbose"
+        : "markdown";
 
   if (explicit.apiKey || explicit.baseUrl || explicit.model) {
     source = "cli";

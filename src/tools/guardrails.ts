@@ -23,8 +23,8 @@ export const MAX_EXTRACT_DOC_CHARS = 50_000;
 export const MAX_AUDIT_SOURCE_CHARS = 50_000;
 
 export const SUBJECT_CRITERIA = {
-  true: "The evidence reports on exactly what this claim asserts (the same check, run, file, metric, or object)",
-  false: "The evidence is silent about it, or reports only on a different check, run, process, or object",
+  true: "The evidence contains data or reports on the same subject, check, run, file, metric, or object that this claim discusses",
+  false: "The evidence reports only on a completely different, unrelated check, run, process, or object",
 };
 
 /**
@@ -53,24 +53,25 @@ export async function verifyClaims(
   }
 
   const autoAccept = input.auto_accept ?? 0.8;
-  const subjectAt = input.subject_at ?? 0.5;
+  const subjectAt = input.subject_at ?? 0.35;
 
   const state = `DOCUMENT EVIDENCE:\n${evidenceText}`;
   const questions: Questions = {};
 
   for (let i = 0; i < claims.length; i++) {
-    questions[`rel_${i}`] = {
-      type: "choice",
-      instructions: `Does the evidence support, contradict, or say nothing about this claim: "${claims[i]}"?`,
-      criteria: {
-        supports: "The evidence clearly supports and confirms the claim",
-        contradicts: "The evidence contradicts, disproves, or opposes the claim",
-        says_nothing: "The evidence neither supports nor contradicts the claim (silent or irrelevant)",
-      },
+    questions[`supp_${i}`] = {
+      type: "noul",
+      instructions: `Does the evidence directly confirm and support this factual claim: "${claims[i]}"?`,
+      criteria: { true: "evidence confirms the claim", false: "evidence does not confirm or is silent" },
+    };
+    questions[`contra_${i}`] = {
+      type: "noul",
+      instructions: `Does the evidence contradict or disprove this factual claim: "${claims[i]}"?`,
+      criteria: { true: "evidence contradicts", false: "evidence does not contradict" },
     };
     questions[`subj_${i}`] = {
       type: "noul",
-      instructions: `Does the evidence report on exactly what this claim asserts: "${claims[i]}"?`,
+      instructions: `The evidence contains data or results regarding the very subject, metric, run, file, or object that this claim discusses: "${claims[i]}"`,
       criteria: SUBJECT_CRITERIA,
     };
   }
@@ -84,24 +85,51 @@ export async function verifyClaims(
   let unsupported = 0;
 
   for (let i = 0; i < claims.length; i++) {
-    const relAns = ans[`rel_${i}`] as ChoiceAnswer | undefined;
+    const suppAns = ans[`supp_${i}`] as NoulAnswer | undefined;
+    const contraAns = ans[`contra_${i}`] as NoulAnswer | undefined;
     const subjAns = ans[`subj_${i}`] as NoulAnswer | undefined;
+    const relAns = ans[`rel_${i}`] as ChoiceAnswer | undefined;
 
-    const rawChoice = relAns?.choice ?? "says_nothing";
-    const confidence = relAns?.confidence ?? 0;
     const sameSubject = subjAns?.noul ?? 1.0;
+    let verdict: ClaimVerdict = "unsupported";
+    let confidence = 0.5;
 
-    let relationVerdict: ClaimVerdict = "unsupported";
-    if (rawChoice === "supports") {
-      relationVerdict = "verified";
-    } else if (rawChoice === "contradicts") {
-      relationVerdict = "contradicted";
+    // 1. Direct choice handling (e.g. TypeSafe native API)
+    const supp = suppAns?.noul ?? 0;
+    const contra = contraAns?.noul ?? 0;
+    const isOffSubject =
+      (relAns?.choice === "contradicts" || (contra >= 0.60 && supp < 0.40)) &&
+      sameSubject < subjectAt &&
+      contra < 0.85;
+
+    // 1. Direct choice handling (e.g. TypeSafe native API)
+    if (relAns?.choice === "supports") {
+      verdict = "verified";
+      confidence = relAns.confidence || 0.85;
+    } else if (relAns?.choice === "contradicts") {
+      verdict = isOffSubject ? "unsupported" : "contradicted";
+      confidence = relAns.confidence || 0.85;
+    } else if (relAns?.choice === "says_nothing") {
+      verdict = "unsupported";
+      confidence = relAns.confidence || 0.5;
     } else {
-      relationVerdict = "unsupported";
+      // 2. High-precision dual-noul calibrated proposition evaluation
+      if (supp >= 0.65 && contra < 0.40) {
+        verdict = "verified";
+        confidence = supp;
+      } else if (contra >= 0.60 && supp < 0.40) {
+        if (!isOffSubject) {
+          verdict = "contradicted";
+          confidence = contra;
+        } else {
+          verdict = "unsupported";
+          confidence = 1 - sameSubject;
+        }
+      } else {
+        verdict = "unsupported";
+        confidence = Math.max(0.5, 1 - Math.abs(supp - contra));
+      }
     }
-
-    const offSubject = relationVerdict === "contradicted" && sameSubject < subjectAt;
-    const verdict = offSubject ? "unsupported" : relationVerdict;
 
     if (verdict === "verified") verified++;
     else if (verdict === "contradicted") contradicted++;
@@ -112,8 +140,12 @@ export async function verifyClaims(
     claimResults.push({
       claim: claims[i],
       verdict,
-      ...(offSubject ? { relation_verdict: relationVerdict } : {}),
-      probabilities: relAns?.probabilities ?? {},
+      ...(isOffSubject ? { relation_verdict: "contradicted" as ClaimVerdict } : {}),
+      probabilities: relAns?.probabilities ?? {
+        verified: suppAns?.noul ?? 0,
+        contradicted: contraAns?.noul ?? 0,
+        unsupported: Math.max(0, 1 - (suppAns?.noul ?? 0) - (contraAns?.noul ?? 0)),
+      },
       confidence,
       same_subject: sameSubject,
       action,
@@ -271,6 +303,14 @@ export async function extractFields(
       instructions: `Which candidate value is the correct '${f.id}' (${f.description}) from the document?`,
       criteria,
     };
+
+    for (let i = 0; i < matches.length; i++) {
+      questions[`match_${f.id}_${i}`] = {
+        type: "noul",
+        instructions: `In this document, is "${matches[i]}" the correct '${f.id}' (${f.description})?`,
+        criteria: { true: "correct value", false: "incorrect or wrong value" },
+      };
+    }
   }
 
   const questionKeys = Object.keys(questions);
@@ -286,12 +326,28 @@ export async function extractFields(
     if (results[f.id]) continue; // already set as invalid_pattern or not_found
 
     const qAns = ans[`field_${f.id}`] as ChoiceAnswer | undefined;
-    const choice = qAns?.choice ?? "none_matched";
-    const confidence = qAns?.confidence ?? 0;
+    let choice = qAns?.choice;
+    let confidence = qAns?.confidence ?? 0;
     const probs = qAns?.probabilities ?? {};
-    const topProb = probs[choice] ?? confidence;
     const matches = fieldMatches[f.id] || [];
 
+    if (!choice || !choice.startsWith("match_")) {
+      const matchScores = matches.map((m, idx) => ({
+        idx,
+        val: m,
+        p: (ans[`match_${f.id}_${idx}`] as NoulAnswer | undefined)?.noul ?? 0,
+      }));
+      matchScores.sort((a, b) => b.p - a.p);
+      if (matchScores.length > 0 && matchScores[0].p >= 0.5) {
+        choice = `match_${matchScores[0].idx}`;
+        confidence = matchScores[0].p;
+      } else {
+        choice = "none_matched";
+        confidence = 0.5;
+      }
+    }
+
+    const topProb = probs[choice] ?? confidence;
     let value: string | null = null;
     let status: "auto" | "review" | "not_found" = "not_found";
 

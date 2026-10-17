@@ -194,6 +194,7 @@ export interface JevActionGateInput {
 }
 
 export interface JevActionGateResult {
+  action?: string;
   recommendation: "allow" | "confirm" | "block";
   confidence: number;
   risk_score: number;

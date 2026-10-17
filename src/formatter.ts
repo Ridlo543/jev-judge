@@ -10,7 +10,7 @@
  * calibrated numbers, and real model explanations.
  */
 
-export type OutputFormat = "markdown" | "json";
+export type OutputFormat = "markdown" | "markdown-verbose" | "json";
 
 // --------------------------------------------------------------------------
 // 1. Reusable TUI / Markdown Layout Primitives
@@ -295,7 +295,7 @@ export function formatToolResult(
   try {
     switch (toolName) {
       case "jev_judge":
-        return formatJudgeResult(data);
+        return formatJudgeResult(data, format);
       case "jev_judge_batch":
         return formatBatchJudgeResult(data);
       case "jev_noul":
@@ -311,7 +311,7 @@ export function formatToolResult(
         return formatActionGateResult(data);
       case "jev_decide":
       case "jev_arbitrate_decision":
-        return formatDecideResult(data);
+        return formatDecideResult(data, format);
       case "jev_find":
       case "jev_semantic_select":
         return formatFindResult(data);
@@ -342,7 +342,7 @@ export function formatToolResult(
   }
 }
 
-function formatJudgeResult(res: any): string {
+function formatJudgeResult(res: any, format: OutputFormat = "markdown"): string {
   if (!res || typeof res !== "object") return String(res);
 
   const verdict = res.verdict;
@@ -496,7 +496,7 @@ function formatJudgeResult(res: any): string {
     badge: `${badge} ${probText}`.trim(),
     table,
     details: details.length > 0 ? details : undefined,
-    sections: sections.length > 0 ? sections : undefined,
+    sections: format === "markdown-verbose" && sections.length > 0 ? sections : undefined,
     footer: {
       latencyMs: res.raw?.durationMs,
       model: res.raw?.model,
@@ -641,7 +641,7 @@ function formatActionGateResult(res: any): string {
   });
 }
 
-function formatDecideResult(res: any): string {
+function formatDecideResult(res: any, format: OutputFormat = "markdown"): string {
   const rec = res?.recommendation;
   const selected = rec?.selected || "none";
   const confidence = typeof rec?.confidence === "number" ? `${(rec.confidence * 100).toFixed(1)}%` : "—";
@@ -692,7 +692,7 @@ function formatDecideResult(res: any): string {
     badge: `\`${selected}\` (${confidence} confidence)`,
     details,
     table,
-    sections: sections.length > 0 ? sections : undefined,
+    sections: format === "markdown-verbose" && sections.length > 0 ? sections : undefined,
   });
 }
 

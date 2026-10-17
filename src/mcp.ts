@@ -90,7 +90,9 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
     try {
       const output = await tool.handler(validation.data);
       const config = resolveConfig();
-      const formatted = formatToolResult(name, output, config.outputFormat);
+      const rawArgs = (params?.arguments ?? {}) as Record<string, unknown>;
+      const requestedFormat = (rawArgs.format as any) || (rawArgs._format as any);
+      const formatted = formatToolResult(name, output, requestedFormat || config.outputFormat);
       sendResult(id, {
         content: [
           {

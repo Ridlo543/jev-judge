@@ -87,18 +87,22 @@ export async function decideChoice(
     },
   };
 
+  for (const c of candidates) {
+    questions[`cand_${c.id}_best`] = {
+      type: "noul",
+      instructions: `Is candidate "${c.id}" (${c.description}) the best recommendation satisfying the decision, evidence, and priorities?`,
+      criteria: { true: "best recommendation", false: "sub-optimal or fails priorities" },
+    };
+  }
+
   const requirements = (input.requirements || []).slice(0, MAX_REQUIREMENTS);
   for (let reqIdx = 0; reqIdx < requirements.length; reqIdx++) {
     const req = requirements[reqIdx];
     for (const c of candidates) {
       questions[`check_${c.id}_req_${reqIdx}`] = {
-        type: "choice",
+        type: "noul",
         instructions: `Does candidate "${c.id}" satisfy this requirement: "${req}"?`,
-        criteria: {
-          supported: "The evidence clearly indicates this candidate satisfies the requirement",
-          contradicted: "The evidence indicates this candidate fails or violates this requirement",
-          unknown: "The evidence is insufficient to verify whether this requirement is satisfied",
-        },
+        criteria: { true: "evidence confirms satisfied", false: "evidence indicates fails or violates" },
       };
     }
   }
@@ -107,9 +111,25 @@ export async function decideChoice(
   const ans = raw.answers;
 
   const choiceAns = ans.selected_candidate as ChoiceAnswer | undefined;
-  const selected = choiceAns?.choice ?? candidates[0].id;
-  const confidence = choiceAns?.confidence ?? 0;
-  const probabilities = choiceAns?.probabilities ?? {};
+  let selected = choiceAns?.choice;
+  let confidence = choiceAns?.confidence ?? 0;
+  let probabilities = choiceAns?.probabilities ?? {};
+
+  if (!selected || !candidates.some((c) => c.id === selected)) {
+    const candScores = candidates.map((c) => ({
+      id: c.id,
+      p: (ans[`cand_${c.id}_best`] as NoulAnswer | undefined)?.noul ?? 0,
+    }));
+    candScores.sort((a, b) => b.p - a.p);
+    selected = candScores[0]?.id || candidates[0].id;
+    confidence = candScores[0]?.p || 0.8;
+
+    const sum = candScores.reduce((acc, s) => acc + s.p, 0) || 1;
+    probabilities = Object.fromEntries(
+      candScores.map((s) => [s.id, Math.round((s.p / sum) * 100) / 100]),
+    );
+  }
+
   const escaped = Boolean(DECIDE_ESCAPE_HATCHES[selected]);
 
   const checks: JevDecideResult["checks"] = [];
@@ -118,10 +138,17 @@ export async function decideChoice(
   for (let reqIdx = 0; reqIdx < requirements.length; reqIdx++) {
     for (const c of candidates) {
       const qKey = `check_${c.id}_req_${reqIdx}`;
-      const checkAns = ans[qKey] as ChoiceAnswer | undefined;
-      const statusRaw = checkAns?.choice ?? "unknown";
-      const status =
-        statusRaw === "supported" || statusRaw === "contradicted" ? statusRaw : "unknown";
+      const checkAns = ans[qKey] as ChoiceAnswer | NoulAnswer | undefined;
+      let status: "supported" | "contradicted" | "unknown" = "unknown";
+
+      if ((checkAns as ChoiceAnswer)?.choice === "supported" || (checkAns as ChoiceAnswer)?.choice === "contradicted") {
+        status = (checkAns as ChoiceAnswer).choice as "supported" | "contradicted";
+      } else if ((checkAns as NoulAnswer)?.noul !== undefined) {
+        const p = (checkAns as NoulAnswer).noul;
+        if (p >= 0.65) status = "supported";
+        else if (p <= 0.35) status = "contradicted";
+        else status = "unknown";
+      }
 
       checks.push({
         candidate: c.id,
@@ -196,12 +223,20 @@ export async function findBest(
     },
   };
 
+  for (const c of candidateEntries) {
+    questions[`cand_${c.id}`] = {
+      type: "noul",
+      instructions: `Is this candidate snippet relevant and responsive to the search query "${queryTrunc}": "${c.text.slice(0, 200)}"?`,
+      criteria: { true: "relevant", false: "irrelevant" },
+    };
+  }
+
   const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
 
   const existsProb = (ans.exists as NoulAnswer)?.noul ?? 0;
   const choiceAns = ans.best_candidate as ChoiceAnswer | undefined;
-  const probs = choiceAns?.probabilities ?? {};
+  const choiceProbs = choiceAns?.probabilities ?? {};
 
   let existsVerdict: "answered" | "partial" | "absent" = "absent";
   if (existsProb >= 0.7) existsVerdict = "answered";
@@ -212,7 +247,7 @@ export async function findBest(
     .map((c) => ({
       id: c.id,
       text: c.text,
-      probability: probs[c.id] ?? 0,
+      probability: choiceProbs[c.id] ?? (ans[`cand_${c.id}`] as NoulAnswer | undefined)?.noul ?? 0,
     }))
     .sort((a, b) => b.probability - a.probability)
     .slice(0, topK);
@@ -263,15 +298,23 @@ export async function rerankCandidates(
     },
   };
 
+  for (const c of candidateEntries) {
+    questions[`cand_${c.id}`] = {
+      type: "noul",
+      instructions: `Is this candidate snippet relevant and responsive to the search query "${queryTrunc}": "${c.text.slice(0, 200)}"?`,
+      criteria: { true: "relevant", false: "irrelevant" },
+    };
+  }
+
   const raw = await rawJevJudgment(state, questions, context?.options);
   const choiceAns = raw.answers.relevance as ChoiceAnswer | undefined;
-  const probs = choiceAns?.probabilities ?? {};
+  const choiceProbs = choiceAns?.probabilities ?? {};
 
   const ranked = candidateEntries
     .map((c) => ({
       id: c.id,
       text: c.text,
-      relevance: probs[c.id] ?? 0,
+      relevance: choiceProbs[c.id] ?? (raw.answers[`cand_${c.id}`] as NoulAnswer | undefined)?.noul ?? 0,
     }))
     .sort((a, b) => b.relevance - a.relevance)
     .slice(0, topK)
@@ -299,6 +342,16 @@ export async function comparePassages(
   const state = `PASSAGE A:\n${passageATrunc}\n\nPASSAGE B:\n${passageBTrunc}`;
 
   const questions: Questions = {
+    same_fact: {
+      type: "noul",
+      instructions: "Do Passage A and Passage B state the same factual assertions?",
+      criteria: { true: "same fact", false: "different or contradictory" },
+    },
+    contradicts: {
+      type: "noul",
+      instructions: "Do Passage A and Passage B directly contradict each other?",
+      criteria: { true: "contradicts", false: "does not contradict" },
+    },
     overall_relation: {
       type: "choice",
       instructions: "How do Passage A and Passage B relate in their substantive assertions?",
@@ -309,10 +362,13 @@ export async function comparePassages(
   const aspects = (input.aspects || []).slice(0, 10);
   for (let i = 0; i < aspects.length; i++) {
     const asp = aspects[i];
-    questions[`aspect_${i}`] = {
-      type: "choice",
-      instructions: `How do the passages compare regarding the aspect '${asp}'?`,
-      criteria: ASPECT_RELATIONS,
+    questions[`asp_${i}_same`] = {
+      type: "noul",
+      instructions: `Regarding aspect '${asp}', do Passage A and Passage B assert the same facts?`,
+    };
+    questions[`asp_${i}_contra`] = {
+      type: "noul",
+      instructions: `Regarding aspect '${asp}', do Passage A and Passage B contradict each other?`,
     };
   }
 
@@ -320,12 +376,28 @@ export async function comparePassages(
   const ans = raw.answers;
 
   const overallAns = ans.overall_relation as ChoiceAnswer | undefined;
-  const choiceRaw = overallAns?.choice ?? "different_facts";
-  const confidence = overallAns?.confidence ?? 0;
-  const probs = overallAns?.probabilities ?? {};
+  let relation: "same_fact" | "contradicts" | "different_facts" = "different_facts";
+  let confidence = 0.5;
 
-  const relation =
-    choiceRaw === "same_fact" || choiceRaw === "contradicts" ? choiceRaw : "different_facts";
+  if (overallAns?.choice === "same_fact" || overallAns?.choice === "contradicts") {
+    relation = overallAns.choice;
+    confidence = overallAns.confidence || 0.85;
+  } else {
+    const sameFact = (ans.same_fact as NoulAnswer | undefined)?.noul ?? 0;
+    const contra = (ans.contradicts as NoulAnswer | undefined)?.noul ?? 0;
+
+    if (contra >= 0.60 && sameFact < 0.40) {
+      relation = "contradicts";
+      confidence = contra;
+    } else if (sameFact >= 0.65 && contra < 0.40) {
+      relation = "same_fact";
+      confidence = sameFact;
+    } else {
+      relation = "different_facts";
+      confidence = Math.max(0.5, 1 - Math.max(sameFact, contra));
+    }
+  }
+
   const action = confidence >= autoAccept ? "auto" : "review";
 
   let aspectResults: JevCompareResult["aspects"] = undefined;
@@ -333,23 +405,37 @@ export async function comparePassages(
     aspectResults = {};
     for (let i = 0; i < aspects.length; i++) {
       const aspName = aspects[i];
-      const aspAns = ans[`aspect_${i}`] as ChoiceAnswer | undefined;
-      const aspChoice = aspAns?.choice ?? "different_facts";
-      const aspRelation =
-        aspChoice === "same_fact" || aspChoice === "contradicts" ? aspChoice : "different_facts";
+      const aspSame = (ans[`asp_${i}_same`] as NoulAnswer | undefined)?.noul ?? 0;
+      const aspContra = (ans[`asp_${i}_contra`] as NoulAnswer | undefined)?.noul ?? 0;
+
+      let aspRelation: "same_fact" | "contradicts" | "different_facts" = "different_facts";
+      let aspConf = 0.5;
+      if (aspContra >= 0.60 && aspSame < 0.40) {
+        aspRelation = "contradicts";
+        aspConf = aspContra;
+      } else if (aspSame >= 0.65 && aspContra < 0.40) {
+        aspRelation = "same_fact";
+        aspConf = aspSame;
+      } else {
+        aspRelation = "different_facts";
+        aspConf = Math.max(0.5, 1 - Math.max(aspSame, aspContra));
+      }
 
       aspectResults[aspName] = {
         relation: aspRelation,
-        confidence: aspAns?.confidence ?? 0,
-        probabilities: aspAns?.probabilities ?? {},
+        confidence: aspConf,
+        probabilities: { same_fact: aspSame, contradicts: aspContra },
       };
     }
   }
-
   return {
     relation,
     confidence,
-    probabilities: probs,
+    probabilities: overallAns?.probabilities ?? {
+      same_fact: (ans.same_fact as NoulAnswer | undefined)?.noul ?? 0,
+      contradicts: (ans.contradicts as NoulAnswer | undefined)?.noul ?? 0,
+      different_facts: Math.max(0, 1 - ((ans.same_fact as NoulAnswer | undefined)?.noul ?? 0) - ((ans.contradicts as NoulAnswer | undefined)?.noul ?? 0)),
+    },
     action,
     aspects: aspectResults,
   };
