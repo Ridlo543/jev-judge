@@ -78,9 +78,7 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
     // 4. Model ID
     let model = options.model;
     if (!model && isInteractive) {
-      const defaultModel = baseUrl.includes("ainything")
-        ? "opencode-free/jev-1.13-free"
-        : "jev-latest";
+      const defaultModel = "jev-latest";
       model = await ask(`Enter Model ID [${defaultModel}]: `, defaultModel);
     }
     if (!model) {

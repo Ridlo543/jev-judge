@@ -115,7 +115,8 @@ export async function decideChoice(
   let confidence = choiceAns?.confidence ?? 0;
   let probabilities = choiceAns?.probabilities ?? {};
 
-  if (!selected || !candidates.some((c) => c.id === selected)) {
+  const isEscapeSelected = Boolean(selected && DECIDE_ESCAPE_HATCHES[selected]);
+  if (!selected || (!candidates.some((c) => c.id === selected) && !isEscapeSelected)) {
     const candScores = candidates.map((c) => ({
       id: c.id,
       p: (ans[`cand_${c.id}_best`] as NoulAnswer | undefined)?.noul ?? 0,

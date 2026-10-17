@@ -205,7 +205,12 @@ async function rawJevJudgment(state, questions, options = {}) {
         }
         throw new Error(`Jev provider returned HTTP ${res.status} (${res.statusText}) at ${targetUrl}: ${errorText || "(empty body)"}`);
       }
-      const rawJson = await res.json();
+      let rawJson;
+      try {
+        rawJson = await res.json();
+      } catch (parseErr) {
+        throw new Error(`Jev provider returned invalid JSON (HTTP ${res.status}): ${String(parseErr)}`);
+      }
       const durationMs = Math.round(performance.now() - t0);
       let parsedAnswers = null;
       let returnedModel = model;
@@ -216,13 +221,17 @@ async function rawJevJudgment(state, questions, options = {}) {
         if (!contentRaw) {
           throw new Error(`Invalid OpenAI-compatible response: missing message.content in choices[0]. Raw: ${JSON.stringify(rawJson).slice(0, 300)}`);
         }
+        let cleanContent = contentRaw.trim();
+        if (cleanContent.startsWith("```")) {
+          cleanContent = cleanContent.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```$/, "").trim();
+        }
         try {
-          const parsed = JSON.parse(contentRaw);
+          const parsed = JSON.parse(cleanContent);
           parsedAnswers = parsed.answers || parsed;
           if (parsed.model)
             returnedModel = parsed.model;
         } catch (err) {
-          throw new Error(`Failed to parse Jev JSON content: "${contentRaw.slice(0, 300)}" (${String(err)})`);
+          throw new Error(`Failed to parse Jev JSON content: "${cleanContent.slice(0, 300)}" (${String(err)})`);
         }
         const rawUsage = rawJson.usage;
         if (rawUsage) {
@@ -281,6 +290,7 @@ function normalizeQuestion(input) {
   if (typeof input === "object" && input !== null) {
     const raw = input;
     const type = typeof raw.type === "string" ? raw.type.toLowerCase() : undefined;
+    const instructions = String(raw.instructions || raw.prompt || raw.question || "").trim();
     if (type === "choice") {
       const rawOpts = raw.criteria ?? raw.options;
       let criteria;
@@ -293,7 +303,7 @@ function normalizeQuestion(input) {
       }
       return {
         type: "choice",
-        instructions: String(raw.instructions || "Select the most appropriate option"),
+        instructions: instructions || "Select the most appropriate option",
         criteria
       };
     }
@@ -309,14 +319,14 @@ function normalizeQuestion(input) {
       }
       return {
         type: "score",
-        instructions: String(raw.instructions || "Rate the level"),
+        instructions: instructions || "Rate the level",
         criteria
       };
     }
     const noulCriteria = raw.criteria && typeof raw.criteria === "object" ? raw.criteria : undefined;
     return {
       type: "noul",
-      instructions: String(raw.instructions || "Is this valid and true?"),
+      instructions: instructions || "Is this valid and true?",
       ...noulCriteria ? { criteria: noulCriteria } : {}
     };
   }
@@ -1255,7 +1265,12 @@ async function rawJevJudgment2(state, questions, options = {}) {
         }
         throw new Error(`Jev provider returned HTTP ${res.status} (${res.statusText}) at ${targetUrl}: ${errorText || "(empty body)"}`);
       }
-      const rawJson = await res.json();
+      let rawJson;
+      try {
+        rawJson = await res.json();
+      } catch (parseErr) {
+        throw new Error(`Jev provider returned invalid JSON (HTTP ${res.status}): ${String(parseErr)}`);
+      }
       const durationMs = Math.round(performance.now() - t0);
       let parsedAnswers = null;
       let returnedModel = model;
@@ -1266,13 +1281,17 @@ async function rawJevJudgment2(state, questions, options = {}) {
         if (!contentRaw) {
           throw new Error(`Invalid OpenAI-compatible response: missing message.content in choices[0]. Raw: ${JSON.stringify(rawJson).slice(0, 300)}`);
         }
+        let cleanContent = contentRaw.trim();
+        if (cleanContent.startsWith("```")) {
+          cleanContent = cleanContent.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```$/, "").trim();
+        }
         try {
-          const parsed = JSON.parse(contentRaw);
+          const parsed = JSON.parse(cleanContent);
           parsedAnswers = parsed.answers || parsed;
           if (parsed.model)
             returnedModel = parsed.model;
         } catch (err) {
-          throw new Error(`Failed to parse Jev JSON content: "${contentRaw.slice(0, 300)}" (${String(err)})`);
+          throw new Error(`Failed to parse Jev JSON content: "${cleanContent.slice(0, 300)}" (${String(err)})`);
         }
         const rawUsage = rawJson.usage;
         if (rawUsage) {
@@ -1331,6 +1350,7 @@ function normalizeQuestion2(input) {
   if (typeof input === "object" && input !== null) {
     const raw = input;
     const type = typeof raw.type === "string" ? raw.type.toLowerCase() : undefined;
+    const instructions = String(raw.instructions || raw.prompt || raw.question || "").trim();
     if (type === "choice") {
       const rawOpts = raw.criteria ?? raw.options;
       let criteria;
@@ -1343,7 +1363,7 @@ function normalizeQuestion2(input) {
       }
       return {
         type: "choice",
-        instructions: String(raw.instructions || "Select the most appropriate option"),
+        instructions: instructions || "Select the most appropriate option",
         criteria
       };
     }
@@ -1359,14 +1379,14 @@ function normalizeQuestion2(input) {
       }
       return {
         type: "score",
-        instructions: String(raw.instructions || "Rate the level"),
+        instructions: instructions || "Rate the level",
         criteria
       };
     }
     const noulCriteria = raw.criteria && typeof raw.criteria === "object" ? raw.criteria : undefined;
     return {
       type: "noul",
-      instructions: String(raw.instructions || "Is this valid and true?"),
+      instructions: instructions || "Is this valid and true?",
       ...noulCriteria ? { criteria: noulCriteria } : {}
     };
   }
@@ -2332,6 +2352,7 @@ ${source}`;
       flagged++;
     recordResults.push({
       id: rec.id,
+      value: rec.value,
       checks: {
         hallucinated: pHallucinated,
         off_target: pOffTarget,
@@ -2697,7 +2718,8 @@ ${candidateDescriptions}`;
   let selected = choiceAns?.choice;
   let confidence = choiceAns?.confidence ?? 0;
   let probabilities = choiceAns?.probabilities ?? {};
-  if (!selected || !candidates.some((c) => c.id === selected)) {
+  const isEscapeSelected = Boolean(selected && DECIDE_ESCAPE_HATCHES[selected]);
+  if (!selected || !candidates.some((c) => c.id === selected) && !isEscapeSelected) {
     const candScores = candidates.map((c) => ({
       id: c.id,
       p: ans[`cand_${c.id}_best`]?.noul ?? 0
@@ -8744,25 +8766,35 @@ var SCHEMAS_BY_TOOL_NAME = {
   jev_gate_acceptance: gateSchema,
   jev_action_gate: actionGateSchema,
   jev_screen_command: actionGateSchema,
+  jev_gate_command: actionGateSchema,
   jev_decide: decideSchema,
   jev_decide_architecture: decideSchema,
+  jev_arbitrate_decision: decideSchema,
   jev_find: findSchema,
   jev_find_best: findSchema,
+  jev_semantic_select: findSchema,
   jev_rerank: rerankSchema,
   jev_rerank_candidates: rerankSchema,
+  jev_rank_relevance: rerankSchema,
   jev_compare: compareSchema,
   jev_compare_passages: compareSchema,
   jev_verify: verifySchema,
   jev_verify_citations: verifySchema,
+  jev_fact_check_citations: verifySchema,
   jev_screen: screenSchema,
   jev_screen_content: screenSchema,
+  jev_screen_prompt_injection: screenSchema,
   jev_extract: extractSchema,
   jev_extract_fields: extractSchema,
+  jev_extract_verbatim_regex: extractSchema,
   jev_audit: auditSchema,
   jev_audit_records: auditSchema,
+  jev_audit_extracted_records: auditSchema,
   jev_noul: noulSchema,
   jev_check_probability: noulSchema,
+  jev_truth_probability: noulSchema,
   jev_judge: judgeSchema,
+  jev_decision_primitive: judgeSchema,
   jev_judge_batch: judgeBatchSchema
 };
 function validateToolCall(toolName, rawArgs) {
@@ -8990,7 +9022,7 @@ async function runSetupWizard(options = {}) {
     apiKey = apiKey.trim();
     let model = options.model;
     if (!model && isInteractive) {
-      const defaultModel = baseUrl.includes("ainything") ? "opencode-free/jev-1.13-free" : "jev-latest";
+      const defaultModel = "jev-latest";
       model = await ask(`Enter Model ID [${defaultModel}]: `, defaultModel);
     }
     if (!model) {

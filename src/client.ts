@@ -129,7 +129,14 @@ export async function rawJevJudgment(
         );
       }
 
-      const rawJson = (await res.json()) as Record<string, unknown>;
+      let rawJson: Record<string, unknown>;
+      try {
+        rawJson = (await res.json()) as Record<string, unknown>;
+      } catch (parseErr) {
+        throw new Error(
+          `Jev provider returned invalid JSON (HTTP ${res.status}): ${String(parseErr)}`,
+        );
+      }
       const durationMs = Math.round(performance.now() - t0);
 
       let parsedAnswers: Answers | null = null;
@@ -147,8 +154,14 @@ export async function rawJevJudgment(
           );
         }
 
+        // Clean potential markdown fences (e.g. ```json ... ```) emitted by proxies or models
+        let cleanContent = contentRaw.trim();
+        if (cleanContent.startsWith("```")) {
+          cleanContent = cleanContent.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```$/, "").trim();
+        }
+
         try {
-          const parsed = JSON.parse(contentRaw) as {
+          const parsed = JSON.parse(cleanContent) as {
             answers?: Answers;
             model?: string;
             usage?: JevJudgeResult["usage"];
@@ -158,7 +171,7 @@ export async function rawJevJudgment(
           if (parsed.model) returnedModel = parsed.model;
         } catch (err) {
           throw new Error(
-            `Failed to parse Jev JSON content: "${contentRaw.slice(0, 300)}" (${String(err)})`,
+            `Failed to parse Jev JSON content: "${cleanContent.slice(0, 300)}" (${String(err)})`,
           );
         }
 
@@ -238,10 +251,10 @@ export function normalizeQuestion(input: unknown): Question {
       instructions: input,
     };
   }
-
   if (typeof input === "object" && input !== null) {
     const raw = input as Record<string, unknown>;
     const type = typeof raw.type === "string" ? raw.type.toLowerCase() : undefined;
+    const instructions = String(raw.instructions || raw.prompt || raw.question || "").trim();
 
     if (type === "choice") {
       const rawOpts = raw.criteria ?? raw.options;
@@ -255,7 +268,7 @@ export function normalizeQuestion(input: unknown): Question {
       }
       return {
         type: "choice",
-        instructions: String(raw.instructions || "Select the most appropriate option"),
+        instructions: instructions || "Select the most appropriate option",
         criteria,
       };
     }
@@ -272,7 +285,7 @@ export function normalizeQuestion(input: unknown): Question {
       }
       return {
         type: "score",
-        instructions: String(raw.instructions || "Rate the level"),
+        instructions: instructions || "Rate the level",
         criteria,
       };
     }
@@ -285,7 +298,7 @@ export function normalizeQuestion(input: unknown): Question {
 
     return {
       type: "noul",
-      instructions: String(raw.instructions || "Is this valid and true?"),
+      instructions: instructions || "Is this valid and true?",
       ...(noulCriteria ? { criteria: noulCriteria } : {}),
     };
   }

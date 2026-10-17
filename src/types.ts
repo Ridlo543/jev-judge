@@ -4,25 +4,31 @@ export type NativeQuestionType = "noul" | "choice" | "score";
 export type QuestionType = NativeQuestionType | "bool" | "boolean";
 
 export interface NoulQuestion {
-  type: "noul" | "bool" | "boolean";
-  instructions: string;
+  type?: "noul" | "bool" | "boolean";
+  instructions?: string;
+  prompt?: string;
+  question?: string;
   criteria?: { true?: string; false?: string } | Record<string, string>;
 }
 
 export interface ChoiceQuestion {
   type: "choice";
-  instructions: string;
+  instructions?: string;
+  prompt?: string;
+  question?: string;
   criteria?: Record<string, string> | string[];
   options?: Record<string, string> | string[];
 }
 
 export interface ScoreQuestion {
   type: "score";
-  instructions: string;
+  instructions?: string;
+  prompt?: string;
+  question?: string;
   criteria?: string[];
   levels?: string[];
+  options?: string[];
 }
-
 export type FlexibleQuestion = NoulQuestion | ChoiceQuestion | ScoreQuestion;
 
 /** Native Question payload strictly conforming to Jev 1.13 endpoint requirement */
@@ -370,6 +376,7 @@ export interface JevAuditResult {
   action: "pass" | "review" | "escalate";
   records: Array<{
     id: string;
+    value?: string;
     checks: {
       hallucinated?: number;
       off_target?: number;

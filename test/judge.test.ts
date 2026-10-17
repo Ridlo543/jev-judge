@@ -84,13 +84,33 @@ describe("jev-judge client", () => {
     expect((res.answers.is_dangerous as any).bool).toBeDefined();
   });
 
-  it("accepts string array and bool aliases without throwing", async () => {
+  it("accepts prompt and question properties and converts to instructions", () => {
     const normalized = normalizeQuestions({
-      q_bool: { type: "bool", instructions: "Is this true?" },
-      q_shorthand: "Is this shorthand?",
+      q_choice: {
+        type: "choice",
+        prompt: "Which framework is this?",
+        options: ["react", "vue", "svelte"],
+      },
+      q_prompt_bool: {
+        type: "boolean",
+        prompt: "Is this valid TypeScript?",
+      },
+      q_bare_question: {
+        question: "Does this return 42?",
+      },
     });
-    expect(normalized.q_bool.type).toBe("noul");
-    expect(normalized.q_shorthand.type).toBe("noul");
+
+    expect(normalized.q_choice.type).toBe("choice");
+    expect(normalized.q_choice.instructions).toBe("Which framework is this?");
+    expect(normalized.q_choice.criteria).toEqual({
+      react: "react",
+      vue: "vue",
+      svelte: "svelte",
+    });
+    expect(normalized.q_prompt_bool.type).toBe("noul");
+    expect(normalized.q_prompt_bool.instructions).toBe("Is this valid TypeScript?");
+    expect(normalized.q_bare_question.type).toBe("noul");
+    expect(normalized.q_bare_question.instructions).toBe("Does this return 42?");
   });
 
   itLive("works with convenience helper methods judgeBool, judgeChoice, judgeScore", async () => {

@@ -427,6 +427,7 @@ export async function auditRecords(
 
     recordResults.push({
       id: rec.id,
+      value: rec.value,
       checks: {
         hallucinated: pHallucinated,
         off_target: pOffTarget,
