@@ -9,17 +9,22 @@ import {
 import type {
   Answer,
   Answers,
+  BatchItem,
+  ChoiceAnswer,
   FlexibleQuestion,
   JevClientOptions,
   JevJudgeResult,
   JudgeResponse,
   JudgmentState,
+  NoulAnswer,
   Question,
   Questions,
+  ScoreAnswer,
   SimplifiedQuestionInput,
 } from "./types";
 
 export { DEFAULT_PROTOCOL, DEFAULT_TIMEOUT_MS };
+export type { SimplifiedQuestionInput, BatchItem };
 
 const RETRYABLE_STATUS_CODES: Record<number, true> = {
   408: true,
@@ -553,11 +558,6 @@ export async function judgeMulti(
   return judge(state, questionsMap as SimplifiedQuestionInput, clientOptions);
 }
 
-export interface BatchItem {
-  id: string;
-  state: JudgmentState;
-  question: SimplifiedQuestionInput;
-}
 
 export interface BatchResultItem {
   id: string;

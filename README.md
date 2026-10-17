@@ -98,28 +98,29 @@ Standard MCP servers often return raw JSON dumps that terminal interfaces format
 
 ## Tool Reference
 
-### Coding and Gating
-- `jev_review`: Scores git diffs against task requirements across four metrics (`correctness`, `spec_match`, `test_gap`, `blast_radius`), producing a composite score ($0.0 \dots 1.0$) and action (`auto | review | escalate`). Non-code diffs (markdown, CSS) automatically receive zero test gap penalty.
-- `jev_gate`: Compares cumulative git diffs and test execution logs against declared completion claims. Contradicted claims trigger an `escalate` status.
-- `jev_action_gate`: Screens terminal commands and file operations before execution, returning a risk score ($0 \dots 3$) and execution action (`allow | confirm | block`).
+By default, the server exposes **8 core orthogonal tools** optimized for coding agent lifecycles, eliminating cognitive ambiguity and routing hesitation across Claude Code, OMP, Cursor, and Windsurf. Setting `JEV_TOOLS="all"` exposes the complete 14-tool catalogue including NLP document extractors. Legacy tool names (`jev_gate`, `jev_noul`, `jev_rerank`) remain fully supported via transparent runtime aliases.
 
-### Technical Research
-- `jev_decide`: Evaluates 2 to 6 technical options against prioritized requirements and evidence, with escape hatches (`ask_user`, `investigate`, `none`).
-- `jev_find`: Locates the most relevant candidate from a list and verifies whether a valid answer exists (`answered | unanswerable`).
-- `jev_rerank`: Reorders candidate text items by semantic relevance without external vector databases.
-- `jev_compare`: Compares two passages or specifications for agreement, contradiction, or independent facts, both overall and per aspect.
+### Core Coding & Safety Tools
+- `jev_review`: Evaluates git diffs across four metrics (`correctness`, `spec_match`, `test_gap`, `blast_radius`). Accepts optional `claims` and `evidence` to run full Definition-of-Done acceptance gating in a single pass.
+- `jev_action_gate`: Pre-execution screening for shell commands and terminal operations (`allow | confirm | block`).
+- `jev_screen`: Detects prompt injection, jailbreaks, hidden commands, and content substance in external text (scraped web pages, user pastes, issue descriptions).
 
-### Guardrails and Verification
-- `jev_verify`: Verifies factual claims line by line against cited evidence text.
-- `jev_screen`: Detects prompt injection, hidden instructions, and low-substance content in external input.
-- `jev_extract`: Extracts verbatim field values from source text using regex candidate matching.
-- `jev_audit`: Audits extracted field values against source documents for hallucinated, wrong, or missing data.
+### Core Research & Decision Tools
+- `jev_decide`: Arbitrates bounded technical choices among 2–6 candidate alternatives with requirement checks and escape hatches (`ask_user`, `investigate`, `none`).
+- `jev_verify`: Verifies factual assertions line by line against cited evidence documents with calibrated confidence.
+- `jev_compare`: Judges how two documents or specifications relate overall and per aspect (`same_fact | contradicts | different_facts`).
+- `jev_find`: Semantic search to locate the most relevant candidate snippet and verify whether a valid answer exists (`answered | partial | absent`). Automatically ranks candidates when `top_k > 1`.
 
-### Primitives
-- `jev_judge`: Flexible evaluator accepting boolean questions, choices, numeric scores, or criteria maps.
-- `jev_judge_batch`: Concurrent batch execution with rate limiting.
-- `jev_noul`: Evaluates calibrated proposition probabilities ($0.0 \dots 1.0$).
+### Core Universal Primitive
+- `jev_judge`: Universal flexible decision primitive supporting boolean propositions, categorical choices, ordinal scales, and multi-question rubrics.
 
+### Extended Tools (`JEV_TOOLS="all"`)
+- `jev_gate`: Dedicated alias for patch review combined with completion claims verification.
+- `jev_rerank`: Semantic relevance ordering for candidate lists.
+- `jev_noul`: Evaluates calibrated proposition truth probabilities ($0.0 \dots 1.0$).
+- `jev_judge_batch`: Concurrent batch evaluation with rate limiting.
+- `jev_extract`: Verbatim atomic field value extraction via regex matching and Jev selection.
+- `jev_audit`: Audits extracted record fields against source text for hallucination and incompleteness.
 ---
 
 ## Setup and Integration
@@ -251,6 +252,7 @@ Settings resolve in order of priority:
 | `JEV_PROTOCOL` | `chat-completions` or `typesafe-direct` | `chat-completions` |
 | `JEV_OUTPUT_FORMAT` | `markdown` (formatted card) or `json` (clean JSON) | `markdown` |
 | `JEV_TIMEOUT_MS` | Request deadline in milliseconds | `20000` |
+| `JEV_TOOLS` | Exposed tool surface: `core` (8 tools) or `all` (14 tools) | `core` |
 
 ---
 

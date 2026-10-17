@@ -81,7 +81,7 @@ describe("jev-judge client", () => {
     expect(typeof res.verdicts.risk_score).toBe("number");
     expect(Number(res.verdicts.risk_score)).toBeGreaterThan(2);
     expect(res.answers.is_dangerous.type).toBe("noul");
-    expect(res.answers.is_dangerous.bool).toBeDefined();
+    expect((res.answers.is_dangerous as any).bool).toBeDefined();
   });
 
   it("accepts string array and bool aliases without throwing", async () => {

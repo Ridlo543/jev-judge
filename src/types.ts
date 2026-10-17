@@ -86,6 +86,12 @@ export type Answers = Record<string, Answer>;
 
 export type JudgmentState = string | Record<string, unknown> | unknown[] | number | boolean | null;
 
+export interface BatchItem {
+  id: string;
+  state: JudgmentState;
+  question: SimplifiedQuestionInput;
+}
+
 export interface JudgeResponse<TAnswers extends Answers = Answers> {
   /** Primary verdict for single question, or first verdict for multi-question */
   verdict: boolean | string | number;

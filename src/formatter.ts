@@ -549,7 +549,7 @@ function formatNoulResult(res: any): string {
         { header: "Probability", align: "center" },
         { header: "Likelihood", align: "center" },
       ],
-      rows: results.map((item) => {
+      rows: results.map((item: any) => {
         const prob = typeof item.probability === "number" ? `${(item.probability * 100).toFixed(1)}%` : "—";
         const label = item.label || (item.probability >= 0.7 ? "likely" : item.probability <= 0.3 ? "unlikely" : "uncertain");
         return [item.proposition || "—", `**${prob}**`, renderBadge(label)];
@@ -601,8 +601,8 @@ function formatGateResult(res: any): string {
   const badge = renderBadge(res?.action || "review");
   const composite = typeof res?.composite === "number" ? res.composite.toFixed(2) : "—";
   const claims = Array.isArray(res?.claims) ? res.claims : [];
-  const verifiedCount = claims.filter((c) => c.verdict === "verified").length;
-  const contradictedCount = res?.contradicted_count ?? claims.filter((c) => c.verdict === "contradicted").length;
+  const verifiedCount = claims.filter((c: any) => c.verdict === "verified").length;
+  const contradictedCount = res?.contradicted_count ?? claims.filter((c: any) => c.verdict === "contradicted").length;
 
   return renderCard({
     icon: "🚪",
@@ -613,7 +613,7 @@ function formatGateResult(res: any): string {
       { label: "Contradicted", value: contradictedCount },
       { label: "All Verified", value: res?.all_claims_verified ? "YES" : "NO" },
     ],
-    checklist: claims.map((c) => ({
+    checklist: claims.map((c: any) => ({
       status: c.verdict || "unsupported",
       text: c.claim,
     })),
@@ -660,7 +660,7 @@ function formatDecideResult(res: any, format: OutputFormat = "markdown"): string
             { header: "Requirement #", align: "center" },
             { header: "Status", align: "center" },
           ],
-          rows: checks.map((ch) => [
+          rows: checks.map((ch: any) => [
             `**${ch.candidate}**`,
             `Req ${ch.requirement}`,
             renderBadge(ch.status),
@@ -719,7 +719,7 @@ function formatFindResult(res: any): string {
         { header: "Score", align: "center" },
         { header: "Content Snippet", align: "left" },
       ],
-      rows: top.map((item, idx) => {
+      rows: top.map((item: any, idx: number) => {
         const rawScore = typeof item.score === "number" ? item.score : item.probability;
         const score = typeof rawScore === "number" ? `${(rawScore * 100).toFixed(1)}%` : "—";
         const snippet = item.text ? truncate(item.text, 60) : "—";
@@ -743,7 +743,7 @@ function formatRerankResult(res: any): string {
         { header: "Relevance", align: "center" },
         { header: "Content Preview", align: "left" },
       ],
-      rows: ranked.map((item, idx) => {
+      rows: ranked.map((item: any, idx: number) => {
         const rank = item.rank ?? idx + 1;
         const rel = typeof item.relevance === "number" ? `${(item.relevance * 100).toFixed(1)}%` : "—";
         const preview = item.text ? truncate(item.text, 60) : "—";
@@ -797,7 +797,7 @@ function formatVerifyResult(res: any): string {
     icon: "📋",
     title: "Citation Verification",
     badge: `${verified} Verified · ${contradicted} Contradicted · ${unsupported} Unsupported`,
-    checklist: claims.map((c) => ({
+    checklist: claims.map((c: any) => ({
       status: c.verdict || c.relation_verdict || "unsupported",
       text: c.claim,
     })),
@@ -870,7 +870,7 @@ function formatAuditResult(res: any): string {
         { header: "Audit Action", align: "center" },
         { header: "Extracted Value", align: "left" },
       ],
-      rows: records.map((r) => {
+      rows: records.map((r: any) => {
         const val = r.value ? `\`${r.value}\`` : "—";
         return [`**${r.id || "—"}**`, renderBadge(r.action || "ok"), val];
       }),

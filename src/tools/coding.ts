@@ -358,12 +358,12 @@ export async function screenAction(
   const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
 
-  const recAns = ans.recommendation as ChoiceAnswer | undefined;
-  const riskAns = ans.risk as ScoreAnswer | undefined;
+  const recAns = ans.recommendation as ChoiceAnswer | NoulAnswer | undefined;
+  const riskAns = ans.risk as ScoreAnswer | NoulAnswer | undefined;
   const prodAns = ans.touches_prod as NoulAnswer | undefined;
 
   let recommendation: "allow" | "confirm" | "block" = "confirm";
-  const scoreRisk = (riskAns as ScoreAnswer)?.score;
+  const scoreRisk = (riskAns as ScoreAnswer | undefined)?.score;
   const isSafe = (ans.is_safe as NoulAnswer | undefined)?.noul;
   const isDestructive = (ans.is_destructive as NoulAnswer | undefined)?.noul;
 
@@ -372,14 +372,14 @@ export async function screenAction(
     rawRisk = scoreRisk;
   } else if (isSafe !== undefined && isDestructive !== undefined) {
     rawRisk = isDestructive * 3.0 * (1 - isSafe * 0.5);
-  } else if ((riskAns as NoulAnswer)?.noul !== undefined) {
+  } else if ((riskAns as NoulAnswer | undefined)?.noul !== undefined) {
     rawRisk = (riskAns as NoulAnswer).noul * 3.0;
   }
   const risk_score = Math.round(rawRisk * 100) / 100;
   const touches_prod = (prodAns?.noul ?? 0) >= 0.5;
 
-  if (recAns?.choice === "allow" || recAns?.choice === "block") {
-    recommendation = recAns.choice;
+  if ((recAns as ChoiceAnswer | undefined)?.choice === "allow" || (recAns as ChoiceAnswer | undefined)?.choice === "block") {
+    recommendation = (recAns as ChoiceAnswer).choice as "allow" | "block";
   } else if (risk_score >= 2.5 || (touches_prod && risk_score >= 2.0)) {
     recommendation = "block";
   } else if (risk_score >= 1.5 || touches_prod) {
@@ -391,7 +391,7 @@ export async function screenAction(
   return {
     action: input.action,
     recommendation,
-    confidence: recAns?.confidence ?? ((recAns as NoulAnswer)?.noul ?? 0.8),
+    confidence: (recAns as ChoiceAnswer | undefined)?.confidence ?? ((recAns as NoulAnswer | undefined)?.noul ?? 0.8),
     risk_score,
     touches_prod,
     touches_prod_probability: prodAns?.noul ?? 0,
