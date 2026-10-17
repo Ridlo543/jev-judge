@@ -8645,15 +8645,46 @@ function superRefine(fn, params) {
 // src/tools/validation.ts
 var thresholdNumber = number2().min(0).max(1);
 var reviewSchema = object({
-  diff: string2().min(1, "diff cannot be empty").max(50000, "diff exceeds 50,000 characters"),
-  request: string2().min(1, "request cannot be empty").max(50000, "request exceeds 50,000 characters"),
+  diff: string2().min(1, "diff cannot be empty").max(50000).optional(),
+  patch: string2().min(1, "diff cannot be empty").max(50000).optional(),
+  request: string2().min(1, "request cannot be empty").max(50000).optional(),
+  task: string2().min(1, "request cannot be empty").max(50000).optional(),
+  spec: string2().min(1, "request cannot be empty").max(50000).optional(),
+  prompt: string2().min(1, "request cannot be empty").max(50000).optional(),
   tests: string2().max(50000).optional(),
-  claims: array(string2().min(1).max(2000)).max(16).optional(),
+  claims: array(string2().min(1)).max(16).optional(),
+  claim: string2().min(1).optional(),
   evidence: union([string2().max(200000), array(any())]).optional(),
+  context: string2().max(200000).optional(),
   auto_accept: thresholdNumber.optional(),
   review_at: thresholdNumber.optional(),
   composite_floor: thresholdNumber.optional(),
   _meta: unknown().optional()
+}).transform((data) => {
+  const rawDiff = (data.diff ?? data.patch ?? "").trim();
+  const rawRequest = (data.request ?? data.task ?? data.spec ?? data.prompt ?? "").trim();
+  let rawClaims = undefined;
+  if (Array.isArray(data.claims))
+    rawClaims = data.claims;
+  else if (typeof data.claims === "string")
+    rawClaims = [data.claims];
+  else if (typeof data.claim === "string")
+    rawClaims = [data.claim];
+  return {
+    diff: rawDiff,
+    request: rawRequest,
+    tests: data.tests,
+    claims: rawClaims,
+    evidence: data.evidence ?? data.context,
+    auto_accept: data.auto_accept,
+    review_at: data.review_at,
+    composite_floor: data.composite_floor,
+    _meta: data._meta
+  };
+}).refine((data) => data.diff.length > 0, {
+  message: "Diff cannot be empty (provide 'diff' or 'patch')"
+}).refine((data) => data.request.length > 0, {
+  message: "Request cannot be empty (provide 'request', 'task', or 'spec')"
 }).refine((data) => {
   if (data.auto_accept !== undefined && data.review_at !== undefined) {
     return data.review_at <= data.auto_accept;
@@ -8661,21 +8692,50 @@ var reviewSchema = object({
   return true;
 }, { message: "review_at cannot exceed auto_accept" });
 var gateSchema = object({
-  diff: string2().min(1, "diff cannot be empty").max(50000, "diff exceeds 50,000 characters"),
-  request: string2().min(1, "request cannot be empty").max(50000, "request exceeds 50,000 characters"),
-  claims: array(string2().min(1).max(2000)).min(1, "claims must contain at least 1 claim").max(16, "claims cannot exceed 16 items"),
-  evidence: union([
-    string2().min(1, "evidence cannot be empty").max(200000, "evidence exceeds 200,000 characters"),
-    array(object({
-      id: string2().optional(),
-      text: string2().min(1, "evidence item text cannot be empty")
-    })).min(1, "evidence array must contain at least 1 item")
-  ]),
+  diff: string2().min(1, "diff cannot be empty").max(50000).optional(),
+  patch: string2().min(1, "diff cannot be empty").max(50000).optional(),
+  request: string2().min(1, "request cannot be empty").max(50000).optional(),
+  task: string2().min(1, "request cannot be empty").max(50000).optional(),
+  spec: string2().min(1, "request cannot be empty").max(50000).optional(),
+  prompt: string2().min(1, "request cannot be empty").max(50000).optional(),
+  claims: array(string2().min(1)).max(16).optional(),
+  claim: string2().min(1).optional(),
+  evidence: union([string2().max(200000), array(any())]).optional(),
+  context: string2().max(200000).optional(),
   tests: string2().max(50000).optional(),
   auto_accept: thresholdNumber.optional(),
   review_at: thresholdNumber.optional(),
   composite_floor: thresholdNumber.optional(),
   _meta: unknown().optional()
+}).transform((data) => {
+  const rawDiff = (data.diff ?? data.patch ?? "").trim();
+  const rawRequest = (data.request ?? data.task ?? data.spec ?? data.prompt ?? "").trim();
+  let rawClaims = [];
+  if (Array.isArray(data.claims))
+    rawClaims = data.claims;
+  else if (typeof data.claims === "string")
+    rawClaims = [data.claims];
+  else if (typeof data.claim === "string")
+    rawClaims = [data.claim];
+  return {
+    diff: rawDiff,
+    request: rawRequest,
+    claims: rawClaims,
+    evidence: data.evidence ?? data.context ?? "",
+    tests: data.tests,
+    auto_accept: data.auto_accept,
+    review_at: data.review_at,
+    composite_floor: data.composite_floor,
+    _meta: data._meta
+  };
+}).refine((data) => data.diff.length > 0, {
+  message: "Diff cannot be empty (provide 'diff' or 'patch')"
+}).refine((data) => data.request.length > 0, {
+  message: "Request cannot be empty (provide 'request', 'task', or 'spec')"
+}).refine((data) => data.claims.length > 0, {
+  message: "claims must contain at least 1 claim (provide 'claims' array or 'claim' string)"
+}).refine((data) => typeof data.evidence === "string" ? data.evidence.length > 0 : data.evidence.length > 0, {
+  message: "Evidence text cannot be empty (provide 'evidence' or 'context')"
 }).refine((data) => {
   if (data.auto_accept !== undefined && data.review_at !== undefined) {
     return data.review_at <= data.auto_accept;
@@ -8683,77 +8743,164 @@ var gateSchema = object({
   return true;
 }, { message: "review_at cannot exceed auto_accept" });
 var actionGateSchema = object({
-  action: string2().min(1, "action cannot be empty").max(1e4),
+  action: string2().min(1).optional(),
+  command: string2().min(1).optional(),
+  cmd: string2().min(1).optional(),
   context: string2().max(1e4).optional(),
   _meta: unknown().optional()
+}).transform((data) => ({
+  action: (data.action || data.command || data.cmd || "").trim(),
+  context: data.context,
+  _meta: data._meta
+})).refine((data) => data.action.length > 0, {
+  message: "Action or command cannot be empty (provide 'action' or 'command')"
 });
-var decideSchema = object({
-  decision: string2().min(1, "decision cannot be empty").max(1500),
-  candidates: array(object({
+var decideCandidateItem = union([
+  string2().min(1).transform((s) => ({ id: s, description: s })),
+  object({
     id: string2().min(1, "candidate id cannot be empty"),
     description: string2().min(1, "candidate description cannot be empty")
-  })).min(2, "candidates must contain at least 2 options").max(6, "candidates cannot exceed 6 options"),
-  evidence: string2().min(1, "evidence cannot be empty").max(12000),
-  priorities: string2().min(1, "priorities cannot be empty").max(2000),
+  })
+]);
+var decideSchema = object({
+  decision: string2().min(1).max(1500).optional(),
+  question: string2().min(1).max(1500).optional(),
+  prompt: string2().min(1).max(1500).optional(),
+  candidates: array(decideCandidateItem).min(2, "candidates must contain at least 2 options").max(6),
+  evidence: string2().max(12000).optional(),
+  context: string2().max(12000).optional(),
+  priorities: string2().max(2000).optional(),
   requirements: array(string2().min(1)).max(3).optional(),
   escape_hatches: boolean2().optional(),
   _meta: unknown().optional()
+}).transform((data) => ({
+  decision: data.decision ?? data.question ?? data.prompt ?? "",
+  candidates: data.candidates,
+  evidence: data.evidence ?? data.context ?? "(No explicit evidence provided)",
+  priorities: data.priorities ?? "(Satisfy technical requirements and best practices)",
+  requirements: data.requirements,
+  escape_hatches: data.escape_hatches,
+  _meta: data._meta
+})).refine((data) => data.decision.length > 0, {
+  message: "decision cannot be empty (provide 'decision', 'question', or 'prompt')"
 });
-var findSchema = object({
-  query: string2().min(1, "query cannot be empty").max(2000),
-  candidates: array(object({
+var searchCandidateItem = union([
+  string2().min(1).transform((s) => ({ text: s })),
+  object({
     id: string2().optional(),
     text: string2().min(1, "candidate text cannot be empty")
-  })).min(1, "candidates array cannot be empty").max(250),
+  })
+]);
+var findSchema = object({
+  query: string2().min(1).max(2000).optional(),
+  q: string2().min(1).max(2000).optional(),
+  candidates: array(searchCandidateItem).min(1, "candidates array cannot be empty").max(250),
   top_k: number2().int().min(1).max(50).optional(),
   _meta: unknown().optional()
+}).transform((data) => ({
+  query: data.query ?? data.q ?? "",
+  candidates: data.candidates.map((c, idx) => ({
+    id: ("id" in c && c.id ? c.id : undefined) ?? `cand_${idx + 1}`,
+    text: c.text
+  })),
+  top_k: data.top_k,
+  _meta: data._meta
+})).refine((data) => data.query.length > 0, {
+  message: "query cannot be empty (provide 'query' or 'q')"
 });
 var rerankSchema = object({
-  query: string2().min(1, "query cannot be empty").max(2000),
-  candidates: array(object({
-    id: string2().optional(),
-    text: string2().min(1, "candidate text cannot be empty")
-  })).min(1, "candidates array cannot be empty").max(250),
+  query: string2().min(1).max(2000).optional(),
+  q: string2().min(1).max(2000).optional(),
+  candidates: array(searchCandidateItem).min(1, "candidates array cannot be empty").max(250),
   top_k: number2().int().min(1).max(250).optional(),
   _meta: unknown().optional()
+}).transform((data) => ({
+  query: data.query ?? data.q ?? "",
+  candidates: data.candidates.map((c, idx) => ({
+    id: ("id" in c && c.id ? c.id : undefined) ?? `cand_${idx + 1}`,
+    text: c.text
+  })),
+  top_k: data.top_k,
+  _meta: data._meta
+})).refine((data) => data.query.length > 0, {
+  message: "query cannot be empty (provide 'query' or 'q')"
 });
 var compareSchema = object({
-  passage_a: string2().min(1, "passage_a cannot be empty").max(20000),
-  passage_b: string2().min(1, "passage_b cannot be empty").max(20000),
+  passage_a: string2().min(1).optional(),
+  passage_b: string2().min(1).optional(),
+  a: string2().min(1).optional(),
+  b: string2().min(1).optional(),
+  text_a: string2().min(1).optional(),
+  text_b: string2().min(1).optional(),
+  doc_a: string2().min(1).optional(),
+  doc_b: string2().min(1).optional(),
   aspects: array(string2().min(1)).max(10).optional(),
   auto_accept: thresholdNumber.optional(),
   _meta: unknown().optional()
+}).transform((data) => ({
+  passage_a: data.passage_a ?? data.a ?? data.text_a ?? data.doc_a ?? "",
+  passage_b: data.passage_b ?? data.b ?? data.text_b ?? data.doc_b ?? "",
+  aspects: data.aspects,
+  auto_accept: data.auto_accept,
+  _meta: data._meta
+})).refine((data) => data.passage_a.length > 0 && data.passage_b.length > 0, {
+  message: "Both passages must be provided (e.g. 'passage_a' & 'passage_b', or 'a' & 'b')"
 });
 var verifySchema = object({
-  claims: array(string2().min(1).max(2000)).min(1, "claims must contain at least 1 claim").max(16, "claims cannot exceed 16 items"),
+  claims: union([string2().min(1), array(string2().min(1))]).optional(),
+  claim: string2().min(1).optional(),
   evidence: union([
-    string2().min(1, "evidence cannot be empty").max(200000),
+    string2().min(1),
     array(object({
       id: string2().optional(),
-      text: string2().min(1, "evidence item text cannot be empty")
-    })).min(1, "evidence array must contain at least 1 item")
-  ]),
+      text: string2().min(1)
+    }))
+  ]).optional(),
+  context: string2().min(1).optional(),
+  document: string2().min(1).optional(),
+  source: string2().min(1).optional(),
   auto_accept: thresholdNumber.optional(),
   subject_at: thresholdNumber.optional(),
   _meta: unknown().optional()
-}).refine((data) => {
-  if (data.auto_accept !== undefined && data.subject_at !== undefined) {
-    return data.subject_at <= data.auto_accept;
+}).transform((data) => {
+  let rawClaims = [];
+  if (Array.isArray(data.claims)) {
+    rawClaims = data.claims;
+  } else if (typeof data.claims === "string") {
+    rawClaims = [data.claims];
+  } else if (typeof data.claim === "string") {
+    rawClaims = [data.claim];
   }
-  return true;
-}, { message: "subject_at cannot exceed auto_accept" });
+  const rawEvidence = data.evidence ?? data.context ?? data.document ?? data.source ?? "";
+  return {
+    claims: rawClaims,
+    evidence: rawEvidence,
+    auto_accept: data.auto_accept,
+    subject_at: data.subject_at,
+    _meta: data._meta
+  };
+}).refine((data) => data.claims.length > 0, {
+  message: "At least one claim must be provided (provide 'claims' array or 'claim' string)"
+}).refine((data) => typeof data.evidence === "string" ? data.evidence.length > 0 : data.evidence.length > 0, {
+  message: "Evidence text cannot be empty (provide 'evidence' or 'context')"
+});
 var screenSchema = object({
-  text: string2().min(1, "text cannot be empty").max(50000),
+  text: string2().min(1).optional(),
+  content: string2().min(1).optional(),
+  input: string2().min(1).optional(),
   purpose: string2().max(2000).optional(),
   block_at: thresholdNumber.optional(),
   review_at: thresholdNumber.optional(),
   _meta: unknown().optional()
-}).refine((data) => {
-  if (data.block_at !== undefined && data.review_at !== undefined) {
-    return data.review_at <= data.block_at;
-  }
-  return true;
-}, { message: "review_at cannot exceed block_at" });
+}).transform((data) => ({
+  text: data.text ?? data.content ?? data.input ?? "",
+  purpose: data.purpose,
+  block_at: data.block_at,
+  review_at: data.review_at,
+  _meta: data._meta
+})).refine((data) => data.text.length > 0, {
+  message: "Text content cannot be empty (provide 'text', 'content', or 'input')"
+});
 var extractSchema = object({
   document: string2().min(1, "document cannot be empty").max(50000),
   fields: array(object({
@@ -8776,15 +8923,42 @@ var auditSchema = object({
   _meta: unknown().optional()
 });
 var noulSchema = object({
-  propositions: array(string2().min(1).max(2000)).min(1, "propositions array cannot be empty").max(64),
+  propositions: union([string2().min(1), array(string2().min(1))]).optional(),
+  proposition: string2().min(1).optional(),
+  statements: union([string2().min(1), array(string2().min(1))]).optional(),
+  claims: union([string2().min(1), array(string2().min(1))]).optional(),
   context: string2().max(150000).optional(),
+  evidence: string2().max(150000).optional(),
   auto_accept: thresholdNumber.optional(),
   _meta: unknown().optional()
+}).transform((data) => {
+  const rawProps = data.propositions ?? data.proposition ?? data.statements ?? data.claims ?? [];
+  const list = Array.isArray(rawProps) ? rawProps : [rawProps];
+  return {
+    propositions: list,
+    context: data.context ?? data.evidence,
+    auto_accept: data.auto_accept,
+    _meta: data._meta
+  };
+}).refine((data) => data.propositions.length > 0, {
+  message: "At least one proposition must be provided"
 });
 var judgeSchema = object({
-  state: unknown(),
-  question: unknown(),
+  state: unknown().optional(),
+  context: unknown().optional(),
+  document: unknown().optional(),
+  question: unknown().optional(),
+  questions: unknown().optional(),
+  q: unknown().optional(),
+  prompt: unknown().optional(),
+  text: unknown().optional(),
   _meta: unknown().optional()
+}).transform((data) => ({
+  state: data.state ?? data.context ?? data.document ?? "",
+  question: data.question ?? data.questions ?? data.q ?? data.prompt ?? data.text,
+  _meta: data._meta
+})).refine((data) => data.question !== undefined, {
+  message: "A question, prompt, or question rubric must be provided (provide 'question' or 'questions')."
 });
 var judgeBatchSchema = object({
   items: array(object({

@@ -93,4 +93,51 @@ describe("Fail-closed argument validation", () => {
     });
     expect(res.ok).toBe(true);
   });
+
+  it("resiliently accepts LLM argument synonyms and normalizes them", () => {
+    // 1. jev_action_gate with command instead of action
+    const actionRes = validateToolCall("jev_action_gate", { command: "rm -rf /tmp" });
+    expect(actionRes.ok).toBe(true);
+    if (actionRes.ok) expect(actionRes.data.action).toBe("rm -rf /tmp");
+
+    // 2. jev_verify with single string claim and context instead of evidence
+    const verifyRes = validateToolCall("jev_verify", {
+      claim: "Only fryum is flagged",
+      context: "Fryum flag = true",
+    });
+    expect(verifyRes.ok).toBe(true);
+    if (verifyRes.ok) {
+      expect(verifyRes.data.claims).toEqual(["Only fryum is flagged"]);
+      expect(verifyRes.data.evidence).toBe("Fryum flag = true");
+    }
+
+    // 3. jev_compare with a and b instead of passage_a and passage_b
+    const compareRes = validateToolCall("jev_compare", { a: "HTTP 80", b: "Port 80" });
+    expect(compareRes.ok).toBe(true);
+    if (compareRes.ok) {
+      expect(compareRes.data.passage_a).toBe("HTTP 80");
+      expect(compareRes.data.passage_b).toBe("Port 80");
+    }
+
+    // 4. jev_find with string candidates and q instead of query
+    const findRes = validateToolCall("jev_find", {
+      q: "find token",
+      candidates: ["token handler", "db pool"],
+    });
+    expect(findRes.ok).toBe(true);
+    if (findRes.ok) {
+      expect(findRes.data.query).toBe("find token");
+      expect(findRes.data.candidates).toHaveLength(2);
+    }
+
+    // 5. jev_judge with questions (plural) and no state
+    const judgeRes = validateToolCall("jev_judge", {
+      questions: { q1: "is this valid?" },
+    });
+    expect(judgeRes.ok).toBe(true);
+    if (judgeRes.ok) {
+      expect(judgeRes.data.state).toBe("");
+      expect(judgeRes.data.question).toBeDefined();
+    }
+  });
 });
