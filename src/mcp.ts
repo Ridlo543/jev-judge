@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { resolveConfig } from "./config";
 import { formatToolResult } from "./formatter";
-import { allTools, toolsByName } from "./tools";
+import { allTools, coreTools, toolsByName } from "./tools";
 import { validateToolCall } from "./tools/validation";
 
 interface JsonRpcRequest {
@@ -54,8 +54,10 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
   }
 
   if (method === "tools/list") {
+    const showAll = process.env.JEV_TOOLS === "all" || process.env.JEV_TOOLS === "14";
+    const exposed = showAll ? allTools : coreTools;
     sendResult(id, {
-      tools: allTools.map((t) => ({
+      tools: exposed.map((t) => ({
         name: t.name,
         description: t.description,
         inputSchema: t.inputSchema,

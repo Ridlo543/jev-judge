@@ -2049,6 +2049,16 @@ var allTools = [
   ...guardrailsTools,
   ...primitiveTools
 ];
+var coreTools = [
+  allTools.find((t) => t.name === "jev_action_gate"),
+  allTools.find((t) => t.name === "jev_screen"),
+  allTools.find((t) => t.name === "jev_decide"),
+  allTools.find((t) => t.name === "jev_verify"),
+  allTools.find((t) => t.name === "jev_compare"),
+  allTools.find((t) => t.name === "jev_review"),
+  allTools.find((t) => t.name === "jev_find"),
+  allTools.find((t) => t.name === "jev_judge")
+];
 var toolsByName = {};
 for (const tool of allTools) {
   toolsByName[tool.name] = tool;
@@ -2057,6 +2067,15 @@ for (const tool of allTools) {
       toolsByName[alias] = tool;
     }
   }
+}
+if (toolsByName.jev_review && !toolsByName.jev_gate) {
+  toolsByName.jev_gate = toolsByName.jev_review;
+}
+if (toolsByName.jev_find && !toolsByName.jev_rerank) {
+  toolsByName.jev_rerank = toolsByName.jev_find;
+}
+if (toolsByName.jev_judge && !toolsByName.jev_noul) {
+  toolsByName.jev_noul = toolsByName.jev_judge;
 }
 export {
   ASPECT_RELATIONS,
@@ -2086,6 +2105,7 @@ export {
   auditRecords,
   codingTools,
   comparePassages,
+  coreTools,
   decideChoice,
   extractFields,
   findBest,
