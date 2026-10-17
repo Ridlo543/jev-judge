@@ -883,6 +883,9 @@ function formatNoulResult(res) {
   });
 }
 function formatReviewResult(res) {
+  if (Array.isArray(res?.claims) && res.claims.length > 0) {
+    return formatGateResult(res);
+  }
   const action = (res?.action || "review").toUpperCase();
   const badge = renderBadge(res?.action || "review");
   const composite = typeof res?.composite === "number" ? res.composite.toFixed(2) : "—";
@@ -1016,7 +1019,8 @@ function formatFindResult(res) {
         { header: "Content Snippet", align: "left" }
       ],
       rows: top.map((item, idx) => {
-        const score = typeof item.score === "number" ? `${(item.score * 100).toFixed(1)}%` : "—";
+        const rawScore = typeof item.score === "number" ? item.score : item.probability;
+        const score = typeof rawScore === "number" ? `${(rawScore * 100).toFixed(1)}%` : "—";
         const snippet = item.text ? truncate(item.text, 60) : "—";
         return [`#${idx + 1}`, `**${item.id}**`, score, snippet];
       })
@@ -1090,7 +1094,7 @@ function formatVerifyResult(res) {
 function formatScreenResult(res) {
   const badge = renderBadge(res?.recommendation?.action || "review");
   const probs = res?.probabilities || {};
-  const probKeys = Object.keys(probs);
+  const probKeys = Object.keys(probs).filter((k) => probs[k] !== undefined);
   const table = probKeys.length > 0 ? {
     columns: [
       { header: "Security Metric", align: "left" },
@@ -2801,11 +2805,15 @@ ${candidateText}`;
     existsVerdict = "partial";
   else
     existsVerdict = "absent";
-  const ranked = candidateEntries.map((c) => ({
-    id: c.id,
-    text: c.text,
-    probability: choiceProbs[c.id] ?? ans[`cand_${c.id}`]?.noul ?? 0
-  })).sort((a, b) => b.probability - a.probability).slice(0, topK);
+  const ranked = candidateEntries.map((c) => {
+    const prob = choiceProbs[c.id] ?? ans[`cand_${c.id}`]?.noul ?? 0;
+    return {
+      id: c.id,
+      text: c.text,
+      probability: prob,
+      score: prob
+    };
+  }).sort((a, b) => b.probability - a.probability).slice(0, topK);
   return {
     exists: existsProb,
     exists_verdict: existsVerdict,
@@ -2917,7 +2925,7 @@ ${passageBTrunc}`;
     if (contra >= 0.6 && sameFact < 0.4) {
       relation = "contradicts";
       confidence = contra;
-    } else if (sameFact >= 0.65 && contra < 0.4) {
+    } else if (sameFact >= 0.55 && contra < 0.35 || sameFact > contra + 0.3 && sameFact >= 0.5) {
       relation = "same_fact";
       confidence = sameFact;
     } else {
@@ -2938,7 +2946,7 @@ ${passageBTrunc}`;
       if (aspContra >= 0.6 && aspSame < 0.4) {
         aspRelation = "contradicts";
         aspConf = aspContra;
-      } else if (aspSame >= 0.65 && aspContra < 0.4) {
+      } else if (aspSame >= 0.55 && aspContra < 0.35 || aspSame > aspContra + 0.3 && aspSame >= 0.5) {
         aspRelation = "same_fact";
         aspConf = aspSame;
       } else {

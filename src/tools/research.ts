@@ -244,11 +244,15 @@ export async function findBest(
   else existsVerdict = "absent";
 
   const ranked = candidateEntries
-    .map((c) => ({
-      id: c.id,
-      text: c.text,
-      probability: choiceProbs[c.id] ?? (ans[`cand_${c.id}`] as NoulAnswer | undefined)?.noul ?? 0,
-    }))
+    .map((c) => {
+      const prob = choiceProbs[c.id] ?? (ans[`cand_${c.id}`] as NoulAnswer | undefined)?.noul ?? 0;
+      return {
+        id: c.id,
+        text: c.text,
+        probability: prob,
+        score: prob,
+      };
+    })
     .sort((a, b) => b.probability - a.probability)
     .slice(0, topK);
 
@@ -389,7 +393,7 @@ export async function comparePassages(
     if (contra >= 0.60 && sameFact < 0.40) {
       relation = "contradicts";
       confidence = contra;
-    } else if (sameFact >= 0.65 && contra < 0.40) {
+    } else if ((sameFact >= 0.55 && contra < 0.35) || (sameFact > contra + 0.30 && sameFact >= 0.50)) {
       relation = "same_fact";
       confidence = sameFact;
     } else {
@@ -413,7 +417,7 @@ export async function comparePassages(
       if (aspContra >= 0.60 && aspSame < 0.40) {
         aspRelation = "contradicts";
         aspConf = aspContra;
-      } else if (aspSame >= 0.65 && aspContra < 0.40) {
+      } else if ((aspSame >= 0.55 && aspContra < 0.35) || (aspSame > aspContra + 0.30 && aspSame >= 0.50)) {
         aspRelation = "same_fact";
         aspConf = aspSame;
       } else {

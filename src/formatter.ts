@@ -559,10 +559,13 @@ function formatNoulResult(res: any): string {
 }
 
 function formatReviewResult(res: any): string {
+  if (Array.isArray(res?.claims) && res.claims.length > 0) {
+    return formatGateResult(res);
+  }
+
   const action = (res?.action || "review").toUpperCase();
   const badge = renderBadge(res?.action || "review");
   const composite = typeof res?.composite === "number" ? res.composite.toFixed(2) : "—";
-
   const scores = res?.scores || {};
   const scoreKeys = Object.keys(scores);
 
@@ -717,7 +720,8 @@ function formatFindResult(res: any): string {
         { header: "Content Snippet", align: "left" },
       ],
       rows: top.map((item, idx) => {
-        const score = typeof item.score === "number" ? `${(item.score * 100).toFixed(1)}%` : "—";
+        const rawScore = typeof item.score === "number" ? item.score : item.probability;
+        const score = typeof rawScore === "number" ? `${(rawScore * 100).toFixed(1)}%` : "—";
         const snippet = item.text ? truncate(item.text, 60) : "—";
         return [`#${idx + 1}`, `**${item.id}**`, score, snippet];
       }),
@@ -804,7 +808,7 @@ function formatScreenResult(res: any): string {
   const badge = renderBadge(res?.recommendation?.action || "review");
   const probs = res?.probabilities || {};
 
-  const probKeys = Object.keys(probs);
+  const probKeys = Object.keys(probs).filter((k) => probs[k] !== undefined);
   const table: TableOptions | undefined =
     probKeys.length > 0
       ? {
