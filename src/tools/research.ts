@@ -461,20 +461,13 @@ export const jevDecideTool: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      decision: { type: "string", description: "Problem or choice statement to resolve." },
+      decision: { type: "string", description: "Problem or choice statement to resolve (or use 'prompt')." },
+      prompt: { type: "string", description: "Alias for decision." },
       candidates: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            description: { type: "string" },
-          },
-          required: ["id", "description"],
-        },
-        description: "List of 2-6 candidate alternatives.",
+        description: "List of 2-6 candidate alternatives (strings or objects with id/description).",
       },
-      evidence: { type: "string", description: "Empirical facts, benchmarks, or code measurements." },
+      evidence: { type: "string", description: "Empirical facts, benchmarks, or code measurements (or use 'context')." },
+      context: { type: "string", description: "Alias for evidence." },
       priorities: { type: "string", description: "Explicit preferences or constraints." },
       requirements: {
         type: "array",
@@ -483,7 +476,6 @@ export const jevDecideTool: ToolDefinition = {
       },
       escape_hatches: { type: "boolean", description: "Include ask_user, investigate, and none (default: true)." },
     },
-    required: ["decision", "candidates", "evidence", "priorities"],
   },
   handler: async (args, context) => {
     return decideChoice(args as unknown as JevDecideInput, context);
@@ -501,22 +493,13 @@ export const jevFindTool: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      query: { type: "string", description: "The search query or specification." },
+      query: { type: "string", description: "The search query or specification (or use 'q')." },
+      q: { type: "string", description: "Alias for query." },
       candidates: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            text: { type: "string" },
-          },
-          required: ["text"],
-        },
-        description: "Array of candidates to search through.",
+        description: "Array of candidates to search through (strings or objects with id/text).",
       },
       top_k: { type: "number", description: "Number of top candidates to return (default: 5)." },
     },
-    required: ["query", "candidates"],
   },
   handler: async (args, context) => {
     return findBest(args as unknown as JevFindInput, context);
@@ -534,22 +517,13 @@ export const jevRerankTool: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      query: { type: "string", description: "Search query or target topic." },
+      query: { type: "string", description: "Search query or target topic (or use 'q')." },
+      q: { type: "string", description: "Alias for query." },
       candidates: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            text: { type: "string" },
-          },
-          required: ["text"],
-        },
-        description: "Array of text candidates to rank.",
+        description: "Array of text candidates to rank (strings or objects with id/text).",
       },
       top_k: { type: "number", description: "Number of top items to return (default: all)." },
     },
-    required: ["query", "candidates"],
   },
   handler: async (args, context) => {
     return rerankCandidates(args as unknown as JevRerankInput, context);
@@ -567,8 +541,10 @@ export const jevCompareTool: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      passage_a: { type: "string", description: "First text passage or spec excerpt." },
-      passage_b: { type: "string", description: "Second text passage or spec excerpt." },
+      passage_a: { type: "string", description: "First text passage or spec excerpt (or use 'a')." },
+      a: { type: "string", description: "Alias for passage_a." },
+      passage_b: { type: "string", description: "Second text passage or spec excerpt (or use 'b')." },
+      b: { type: "string", description: "Alias for passage_b." },
       aspects: {
         type: "array",
         items: { type: "string" },
@@ -576,7 +552,6 @@ export const jevCompareTool: ToolDefinition = {
       },
       auto_accept: { type: "number", description: "Threshold for auto decision (default: 0.85)." },
     },
-    required: ["passage_a", "passage_b"],
   },
   handler: async (args, context) => {
     return comparePassages(args as unknown as JevCompareInput, context);

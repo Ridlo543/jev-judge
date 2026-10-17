@@ -1579,23 +1579,24 @@ var jevReviewTool = {
   inputSchema: {
     type: "object",
     properties: {
-      diff: { type: "string", description: "The git diff or patch text to evaluate." },
-      request: { type: "string", description: "The original task request or acceptance specification." },
+      diff: { type: "string", description: "The git diff or patch text to evaluate (or use 'patch')." },
+      patch: { type: "string", description: "Alias for diff." },
+      request: { type: "string", description: "The original task request or acceptance specification (or use 'task')." },
+      task: { type: "string", description: "Alias for request." },
       tests: { type: "string", description: "Optional output log from executed tests." },
       claims: {
-        type: "array",
-        items: { type: "string" },
         description: "Optional completion claims to audit against evidence (runs full DoD acceptance gate if provided)."
       },
+      claim: { type: "string", description: "Single completion claim to audit." },
       evidence: {
         type: "string",
-        description: "Optional test runner logs or execution output supporting the completion claims."
+        description: "Optional test runner logs or execution output supporting the completion claims (or use 'context')."
       },
+      context: { type: "string", description: "Alias for evidence." },
       auto_accept: { type: "number", description: "Threshold for auto-approval (default: 0.8)." },
       review_at: { type: "number", description: "Threshold below which to escalate to human (default: min(0.5, auto_accept))." },
       composite_floor: { type: "number", description: "Minimum weighted composite score required for auto (default: 0.7)." }
-    },
-    required: ["diff", "request"]
+    }
   },
   handler: async (args, context) => {
     const rawArgs = args;
@@ -1647,10 +1648,10 @@ var jevActionGateTool = {
   inputSchema: {
     type: "object",
     properties: {
-      action: { type: "string", description: "The shell command or action about to run." },
+      action: { type: "string", description: "The shell command or action about to run (or use 'command')." },
+      command: { type: "string", description: "Alias for action." },
       context: { type: "string", description: "Optional context describing what the agent is attempting to accomplish." }
-    },
-    required: ["action"]
+    }
   },
   handler: async (args, context) => {
     return screenAction(args, context);
@@ -2040,18 +2041,17 @@ var jevVerifyTool = {
     type: "object",
     properties: {
       claims: {
-        type: "array",
-        items: { type: "string" },
-        description: "List of testable claims to check."
+        description: "List of testable claims to check, or a single claim string."
       },
+      claim: { type: "string", description: "Single claim to check." },
       evidence: {
         type: "string",
-        description: "The source document or evidence text to check claims against."
+        description: "The source document or evidence text to check claims against (or use 'context')."
       },
+      context: { type: "string", description: "Alias for evidence." },
       auto_accept: { type: "number", description: "Confidence threshold for auto verification (default: 0.8)." },
       subject_at: { type: "number", description: "Threshold for subject match before contradiction stands (default: 0.5)." }
-    },
-    required: ["claims", "evidence"]
+    }
   },
   handler: async (args, context) => {
     return verifyClaims(args, context);
@@ -2067,12 +2067,13 @@ var jevScreenTool = {
   inputSchema: {
     type: "object",
     properties: {
-      text: { type: "string", description: "The content to screen." },
+      text: { type: "string", description: "The content to screen (or use 'content' or 'input')." },
+      content: { type: "string", description: "Alias for text." },
+      input: { type: "string", description: "Alias for text." },
       purpose: { type: "string", description: "Optional description of what the agent is doing with this text." },
       block_at: { type: "number", description: "Injection threshold to block (default: 0.75)." },
       review_at: { type: "number", description: "Injection threshold to review (default: 0.25)." }
-    },
-    required: ["text"]
+    }
   },
   handler: async (args, context) => {
     return screenText(args, context);
@@ -2209,13 +2210,21 @@ var jevJudgeTool = {
     type: "object",
     properties: {
       state: {
-        description: "The situation, code snippet, git diff, document, or context being judged."
+        description: "The situation, code snippet, git diff, document, or context being judged (optional)."
+      },
+      context: {
+        description: "Alias for state."
       },
       question: {
         description: "The question(s) to evaluate. Can be a string, a question object, or a map of questions."
+      },
+      questions: {
+        description: "Map of questions to evaluate (alias for question)."
+      },
+      prompt: {
+        description: "Single question or prompt string."
       }
-    },
-    required: ["state", "question"]
+    }
   },
   handler: async (args, context) => {
     return judge(args.state, args.question, context?.options);
@@ -2662,20 +2671,13 @@ var jevDecideTool = {
   inputSchema: {
     type: "object",
     properties: {
-      decision: { type: "string", description: "Problem or choice statement to resolve." },
+      decision: { type: "string", description: "Problem or choice statement to resolve (or use 'prompt')." },
+      prompt: { type: "string", description: "Alias for decision." },
       candidates: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            description: { type: "string" }
-          },
-          required: ["id", "description"]
-        },
-        description: "List of 2-6 candidate alternatives."
+        description: "List of 2-6 candidate alternatives (strings or objects with id/description)."
       },
-      evidence: { type: "string", description: "Empirical facts, benchmarks, or code measurements." },
+      evidence: { type: "string", description: "Empirical facts, benchmarks, or code measurements (or use 'context')." },
+      context: { type: "string", description: "Alias for evidence." },
       priorities: { type: "string", description: "Explicit preferences or constraints." },
       requirements: {
         type: "array",
@@ -2683,8 +2685,7 @@ var jevDecideTool = {
         description: "Optional list of up to 3 testable requirements."
       },
       escape_hatches: { type: "boolean", description: "Include ask_user, investigate, and none (default: true)." }
-    },
-    required: ["decision", "candidates", "evidence", "priorities"]
+    }
   },
   handler: async (args, context) => {
     return decideChoice(args, context);
@@ -2700,22 +2701,13 @@ var jevFindTool = {
   inputSchema: {
     type: "object",
     properties: {
-      query: { type: "string", description: "The search query or specification." },
+      query: { type: "string", description: "The search query or specification (or use 'q')." },
+      q: { type: "string", description: "Alias for query." },
       candidates: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            text: { type: "string" }
-          },
-          required: ["text"]
-        },
-        description: "Array of candidates to search through."
+        description: "Array of candidates to search through (strings or objects with id/text)."
       },
       top_k: { type: "number", description: "Number of top candidates to return (default: 5)." }
-    },
-    required: ["query", "candidates"]
+    }
   },
   handler: async (args, context) => {
     return findBest(args, context);
@@ -2731,22 +2723,13 @@ var jevRerankTool = {
   inputSchema: {
     type: "object",
     properties: {
-      query: { type: "string", description: "Search query or target topic." },
+      query: { type: "string", description: "Search query or target topic (or use 'q')." },
+      q: { type: "string", description: "Alias for query." },
       candidates: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            text: { type: "string" }
-          },
-          required: ["text"]
-        },
-        description: "Array of text candidates to rank."
+        description: "Array of text candidates to rank (strings or objects with id/text)."
       },
       top_k: { type: "number", description: "Number of top items to return (default: all)." }
-    },
-    required: ["query", "candidates"]
+    }
   },
   handler: async (args, context) => {
     return rerankCandidates(args, context);
@@ -2762,16 +2745,17 @@ var jevCompareTool = {
   inputSchema: {
     type: "object",
     properties: {
-      passage_a: { type: "string", description: "First text passage or spec excerpt." },
-      passage_b: { type: "string", description: "Second text passage or spec excerpt." },
+      passage_a: { type: "string", description: "First text passage or spec excerpt (or use 'a')." },
+      a: { type: "string", description: "Alias for passage_a." },
+      passage_b: { type: "string", description: "Second text passage or spec excerpt (or use 'b')." },
+      b: { type: "string", description: "Alias for passage_b." },
       aspects: {
         type: "array",
         items: { type: "string" },
         description: "Optional list of up to 10 specific aspects to compare individually (e.g. ['performance', 'caching'])."
       },
       auto_accept: { type: "number", description: "Threshold for auto decision (default: 0.85)." }
-    },
-    required: ["passage_a", "passage_b"]
+    }
   },
   handler: async (args, context) => {
     return comparePassages(args, context);

@@ -92,14 +92,22 @@ export const jevJudgeTool: ToolDefinition = {
     type: "object",
     properties: {
       state: {
-        description: "The situation, code snippet, git diff, document, or context being judged.",
+        description: "The situation, code snippet, git diff, document, or context being judged (optional).",
+      },
+      context: {
+        description: "Alias for state.",
       },
       question: {
         description:
           "The question(s) to evaluate. Can be a string, a question object, or a map of questions.",
       },
+      questions: {
+        description: "Map of questions to evaluate (alias for question).",
+      },
+      prompt: {
+        description: "Single question or prompt string.",
+      },
     },
-    required: ["state", "question"],
   },
   handler: async (args, context) => {
     return judge(

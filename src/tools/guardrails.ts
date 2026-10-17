@@ -467,18 +467,17 @@ export const jevVerifyTool: ToolDefinition = {
     type: "object",
     properties: {
       claims: {
-        type: "array",
-        items: { type: "string" },
-        description: "List of testable claims to check.",
+        description: "List of testable claims to check, or a single claim string.",
       },
+      claim: { type: "string", description: "Single claim to check." },
       evidence: {
         type: "string",
-        description: "The source document or evidence text to check claims against.",
+        description: "The source document or evidence text to check claims against (or use 'context').",
       },
+      context: { type: "string", description: "Alias for evidence." },
       auto_accept: { type: "number", description: "Confidence threshold for auto verification (default: 0.8)." },
       subject_at: { type: "number", description: "Threshold for subject match before contradiction stands (default: 0.5)." },
     },
-    required: ["claims", "evidence"],
   },
   handler: async (args, context) => {
     return verifyClaims(args as unknown as JevVerifyInput, context);
@@ -496,12 +495,13 @@ export const jevScreenTool: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      text: { type: "string", description: "The content to screen." },
+      text: { type: "string", description: "The content to screen (or use 'content' or 'input')." },
+      content: { type: "string", description: "Alias for text." },
+      input: { type: "string", description: "Alias for text." },
       purpose: { type: "string", description: "Optional description of what the agent is doing with this text." },
       block_at: { type: "number", description: "Injection threshold to block (default: 0.75)." },
       review_at: { type: "number", description: "Injection threshold to review (default: 0.25)." },
     },
-    required: ["text"],
   },
   handler: async (args, context) => {
     return screenText(args as unknown as JevScreenInput, context);

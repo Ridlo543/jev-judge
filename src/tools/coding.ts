@@ -413,23 +413,24 @@ export const jevReviewTool: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      diff: { type: "string", description: "The git diff or patch text to evaluate." },
-      request: { type: "string", description: "The original task request or acceptance specification." },
+      diff: { type: "string", description: "The git diff or patch text to evaluate (or use 'patch')." },
+      patch: { type: "string", description: "Alias for diff." },
+      request: { type: "string", description: "The original task request or acceptance specification (or use 'task')." },
+      task: { type: "string", description: "Alias for request." },
       tests: { type: "string", description: "Optional output log from executed tests." },
       claims: {
-        type: "array",
-        items: { type: "string" },
         description: "Optional completion claims to audit against evidence (runs full DoD acceptance gate if provided).",
       },
+      claim: { type: "string", description: "Single completion claim to audit." },
       evidence: {
         type: "string",
-        description: "Optional test runner logs or execution output supporting the completion claims.",
+        description: "Optional test runner logs or execution output supporting the completion claims (or use 'context').",
       },
+      context: { type: "string", description: "Alias for evidence." },
       auto_accept: { type: "number", description: "Threshold for auto-approval (default: 0.8)." },
       review_at: { type: "number", description: "Threshold below which to escalate to human (default: min(0.5, auto_accept))." },
       composite_floor: { type: "number", description: "Minimum weighted composite score required for auto (default: 0.7)." },
     },
-    required: ["diff", "request"],
   },
   handler: async (args, context) => {
     const rawArgs = args as Record<string, unknown>;
@@ -485,10 +486,10 @@ export const jevActionGateTool: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      action: { type: "string", description: "The shell command or action about to run." },
+      action: { type: "string", description: "The shell command or action about to run (or use 'command')." },
+      command: { type: "string", description: "Alias for action." },
       context: { type: "string", description: "Optional context describing what the agent is attempting to accomplish." },
     },
-    required: ["action"],
   },
   handler: async (args, context) => {
     return screenAction(args as unknown as JevActionGateInput, context);
