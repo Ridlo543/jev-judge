@@ -476,7 +476,7 @@ export const jevGateTool: ToolDefinition = {
 
 export const jevActionGateTool: ToolDefinition = {
   name: "jev_action_gate",
-  aliases: ["jev_screen_command"],
+  aliases: ["jev_screen_command", "jev_gate_command"],
   description:
     "Pre-execution safety screening before running autonomous shell commands or file operations.\n" +
     "USE WHEN: About to execute a potentially destructive or state-changing action in the terminal (e.g. rm, drop, git reset --hard, curl, alter, overwrite).\n" +

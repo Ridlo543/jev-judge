@@ -1962,7 +1962,7 @@ var jevGateTool = {
 };
 var jevActionGateTool = {
   name: "jev_action_gate",
-  aliases: ["jev_screen_command"],
+  aliases: ["jev_screen_command", "jev_gate_command"],
   description: `Pre-execution safety screening before running autonomous shell commands or file operations.
 ` + `USE WHEN: About to execute a potentially destructive or state-changing action in the terminal (e.g. rm, drop, git reset --hard, curl, alter, overwrite).
 ` + `DO NOT USE WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files) or for reviewing code diffs (use jev_review).
@@ -2353,7 +2353,7 @@ ${source}`;
 }
 var jevVerifyTool = {
   name: "jev_verify",
-  aliases: ["jev_verify_citations"],
+  aliases: ["jev_verify_citations", "jev_fact_check_citations"],
   description: `Test factual claims line-by-line against cited evidence documents with calibrated confidence.
 ` + `USE WHEN: A research brief, PR description, or summary makes factual assertions that must be checked against raw evidence text (eliminates LLM confirmation bias and hallucinations).
 ` + `DO NOT USE WHEN: You have a code diff / git patch to review (use jev_review or jev_gate).
@@ -2522,6 +2522,7 @@ ${truncate2(input.context, 1e5).text}` : "Evaluate based on general facts, logic
 }
 var jevJudgeTool = {
   name: "jev_judge",
+  aliases: ["jev_decision_primitive"],
   description: `Universal flexible TypeSafe Jev decision primitive for boolean propositions, multi-choice, or ordinal scoring.
 ` + `USE WHEN: You need an open-ended calibrated judgment, custom question rubric, or multi-criteria decision not covered by domain tools.
 ` + `DO NOT USE WHEN: A specialized tool exists (use jev_review for code diffs, jev_action_gate for shell commands, jev_verify for text citations).
@@ -2577,7 +2578,7 @@ var jevJudgeBatchTool = {
 };
 var jevNoulTool = {
   name: "jev_noul",
-  aliases: ["jev_check_probability"],
+  aliases: ["jev_check_probability", "jev_truth_probability"],
   description: `Compute calibrated truth probability (0.0 to 1.0) for a list of simple propositions or hypotheses without custom rubrics.
 ` + `USE WHEN: You only have simple statements to test for truth probability without questions, criteria, or score levels.
 ` + `DO NOT USE WHEN: You have cited evidence documents to fact-check against (use jev_verify) or complex rubrics (use jev_judge).
@@ -2974,7 +2975,7 @@ ${passageBTrunc}`;
 }
 var jevDecideTool = {
   name: "jev_decide",
-  aliases: ["jev_decide_architecture"],
+  aliases: ["jev_decide_architecture", "jev_arbitrate_decision"],
   description: `Arbitrate one bounded technical or architectural choice among 2-6 candidates with requirements, evidence, and priorities.
 ` + `USE WHEN: Choosing between 2-6 concrete design options, libraries, or architectural alternatives with trade-offs.
 ` + `DO NOT USE WHEN: The question is a simple true/false or general rubric evaluation (use jev_judge).
@@ -3012,7 +3013,7 @@ var jevDecideTool = {
 };
 var jevFindTool = {
   name: "jev_find",
-  aliases: ["jev_find_best"],
+  aliases: ["jev_find_best", "jev_semantic_select"],
   description: `Semantic search to pick the single best candidate from an array and determine if any candidate actually answers the query.
 ` + `USE WHEN: Picking the single best candidate among several choices (files, notes, code snippets) or verifying if a valid answer exists.
 ` + `DO NOT USE WHEN: You need an entire list sorted and ranked by relevance (use jev_rerank), or when regex/grep search suffices.
@@ -3043,7 +3044,7 @@ var jevFindTool = {
 };
 var jevRerankTool = {
   name: "jev_rerank",
-  aliases: ["jev_rerank_candidates"],
+  aliases: ["jev_rerank_candidates", "jev_rank_relevance"],
   description: `Score and rank an entire list of candidates by semantic relevance without an external vector database.
 ` + `USE WHEN: Full relevance ordering across all candidates is needed (retrieval ranking, search deduplication).
 ` + `DO NOT USE WHEN: You only need the single best candidate or need to check if an answer exists (use jev_find).
@@ -9447,7 +9448,7 @@ var jevGateTool2 = {
 };
 var jevActionGateTool2 = {
   name: "jev_action_gate",
-  aliases: ["jev_screen_command"],
+  aliases: ["jev_screen_command", "jev_gate_command"],
   description: `Pre-execution safety screening before running autonomous shell commands or file operations.
 ` + `USE WHEN: About to execute a potentially destructive or state-changing action in the terminal (e.g. rm, drop, git reset --hard, curl, alter, overwrite).
 ` + `DO NOT USE WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files) or for reviewing code diffs (use jev_review).

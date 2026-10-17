@@ -1,6 +1,6 @@
 {
   "name": "jev-judge",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Universal TypeSafe Jev Decision Model Runner & MCP Server (OpenAI-Compatible & Direct)",
   "main": "dist/index.js",
   "module": "src/index.ts",

@@ -82,6 +82,7 @@ export async function judgeNoul(
 
 export const jevJudgeTool: ToolDefinition = {
   name: "jev_judge",
+  aliases: ["jev_decision_primitive"],
   description:
     "Universal flexible TypeSafe Jev decision primitive for boolean propositions, multi-choice, or ordinal scoring.\n" +
     "USE WHEN: You need an open-ended calibrated judgment, custom question rubric, or multi-criteria decision not covered by domain tools.\n" +
@@ -149,7 +150,7 @@ export const jevJudgeBatchTool: ToolDefinition = {
 
 export const jevNoulTool: ToolDefinition = {
   name: "jev_noul",
-  aliases: ["jev_check_probability"],
+  aliases: ["jev_check_probability", "jev_truth_probability"],
   description:
     "Compute calibrated truth probability (0.0 to 1.0) for a list of simple propositions or hypotheses without custom rubrics.\n" +
     "USE WHEN: You only have simple statements to test for truth probability without questions, criteria, or score levels.\n" +

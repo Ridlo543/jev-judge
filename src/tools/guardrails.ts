@@ -456,7 +456,7 @@ export async function auditRecords(
 
 export const jevVerifyTool: ToolDefinition = {
   name: "jev_verify",
-  aliases: ["jev_verify_citations"],
+  aliases: ["jev_verify_citations", "jev_fact_check_citations"],
   description:
     "Test factual claims line-by-line against cited evidence documents with calibrated confidence.\n" +
     "USE WHEN: A research brief, PR description, or summary makes factual assertions that must be checked against raw evidence text (eliminates LLM confirmation bias and hallucinations).\n" +

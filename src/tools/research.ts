@@ -451,7 +451,7 @@ export async function comparePassages(
 
 export const jevDecideTool: ToolDefinition = {
   name: "jev_decide",
-  aliases: ["jev_decide_architecture"],
+  aliases: ["jev_decide_architecture", "jev_arbitrate_decision"],
   description:
     "Arbitrate one bounded technical or architectural choice among 2-6 candidates with requirements, evidence, and priorities.\n" +
     "USE WHEN: Choosing between 2-6 concrete design options, libraries, or architectural alternatives with trade-offs.\n" +
@@ -491,7 +491,7 @@ export const jevDecideTool: ToolDefinition = {
 
 export const jevFindTool: ToolDefinition = {
   name: "jev_find",
-  aliases: ["jev_find_best"],
+  aliases: ["jev_find_best", "jev_semantic_select"],
   description:
     "Semantic search to pick the single best candidate from an array and determine if any candidate actually answers the query.\n" +
     "USE WHEN: Picking the single best candidate among several choices (files, notes, code snippets) or verifying if a valid answer exists.\n" +
@@ -524,7 +524,7 @@ export const jevFindTool: ToolDefinition = {
 
 export const jevRerankTool: ToolDefinition = {
   name: "jev_rerank",
-  aliases: ["jev_rerank_candidates"],
+  aliases: ["jev_rerank_candidates", "jev_rank_relevance"],
   description:
     "Score and rank an entire list of candidates by semantic relevance without an external vector database.\n" +
     "USE WHEN: Full relevance ordering across all candidates is needed (retrieval ranking, search deduplication).\n" +
