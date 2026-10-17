@@ -4,30 +4,43 @@ export type NativeQuestionType = "noul" | "choice" | "score";
 export type QuestionType = NativeQuestionType | "bool" | "boolean";
 
 export interface NoulQuestion {
-  type?: "noul" | "bool" | "boolean";
+  type?: "noul" | "bool" | "boolean" | "yes_no" | "true_false";
   instructions?: string;
+  text?: string;
   prompt?: string;
   question?: string;
-  criteria?: { true?: string; false?: string } | Record<string, string>;
+  query?: string;
+  statement?: string;
+  description?: string;
+  criteria?: { true?: string; false?: string; yes?: string; no?: string } | Record<string, string>;
 }
 
 export interface ChoiceQuestion {
   type: "choice";
   instructions?: string;
+  text?: string;
   prompt?: string;
   question?: string;
+  query?: string;
+  description?: string;
   criteria?: Record<string, string> | string[];
   options?: Record<string, string> | string[];
+  choices?: Record<string, string> | string[];
 }
 
 export interface ScoreQuestion {
   type: "score";
   instructions?: string;
+  text?: string;
   prompt?: string;
   question?: string;
+  query?: string;
+  description?: string;
   criteria?: string[];
   levels?: string[];
   options?: string[];
+  scale?: string[];
+  choices?: string[];
 }
 export type FlexibleQuestion = NoulQuestion | ChoiceQuestion | ScoreQuestion;
 

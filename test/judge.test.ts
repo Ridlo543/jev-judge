@@ -113,6 +113,26 @@ describe("jev-judge client", () => {
     expect(normalized.q_bare_question.instructions).toBe("Does this return 42?");
   });
 
+  it("accepts Claude Code question format using 'text' property", () => {
+    const normalized = normalizeQuestions({
+      fryum_only_flag: {
+        type: "boolean",
+        text: "Under the stated rule, is fryum the only class flagged by gate L?",
+      },
+      h1_failed: {
+        type: "boolean",
+        text: "Under the stated rule, did H1 fail?",
+      },
+    });
+
+    expect(normalized.fryum_only_flag.type).toBe("noul");
+    expect(normalized.fryum_only_flag.instructions).toBe(
+      "Under the stated rule, is fryum the only class flagged by gate L?",
+    );
+    expect(normalized.h1_failed.type).toBe("noul");
+    expect(normalized.h1_failed.instructions).toBe("Under the stated rule, did H1 fail?");
+  });
+
   itLive("works with convenience helper methods judgeBool, judgeChoice, judgeScore", async () => {
     const [isHarmless, category, difficulty] = await Promise.all([
       judgeBool("console.log('hi')", "Is this a simple logging statement?"),

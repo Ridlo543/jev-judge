@@ -283,9 +283,9 @@ function normalizeQuestion(input) {
   if (typeof input === "object" && input !== null) {
     const raw = input;
     const type = typeof raw.type === "string" ? raw.type.toLowerCase() : undefined;
-    const instructions = String(raw.instructions || raw.prompt || raw.question || "").trim();
+    const instructions = String(raw.instructions || raw.text || raw.prompt || raw.question || raw.query || raw.statement || raw.claim || raw.title || raw.description || raw.desc || "").trim();
     if (type === "choice") {
-      const rawOpts = raw.criteria ?? raw.options;
+      const rawOpts = raw.criteria ?? raw.options ?? raw.choices;
       let criteria;
       if (Array.isArray(rawOpts)) {
         criteria = Object.fromEntries(rawOpts.map((k) => [String(k), String(k)]));
@@ -301,7 +301,7 @@ function normalizeQuestion(input) {
       };
     }
     if (type === "score") {
-      const rawLevels = raw.criteria ?? raw.levels ?? raw.options;
+      const rawLevels = raw.criteria ?? raw.levels ?? raw.options ?? raw.scale ?? raw.choices;
       let criteria;
       if (Array.isArray(rawLevels)) {
         criteria = rawLevels.map(String);
@@ -316,7 +316,23 @@ function normalizeQuestion(input) {
         criteria
       };
     }
-    const noulCriteria = raw.criteria && typeof raw.criteria === "object" ? raw.criteria : undefined;
+    const rawCrit = raw.criteria && typeof raw.criteria === "object" ? raw.criteria : undefined;
+    let noulCriteria = undefined;
+    if (rawCrit) {
+      if (rawCrit.true || rawCrit.false) {
+        noulCriteria = {
+          true: String(rawCrit.true || "true"),
+          false: String(rawCrit.false || "false")
+        };
+      } else if (rawCrit.yes || rawCrit.no) {
+        noulCriteria = {
+          true: String(rawCrit.yes || "yes"),
+          false: String(rawCrit.no || "no")
+        };
+      } else {
+        noulCriteria = rawCrit;
+      }
+    }
     return {
       type: "noul",
       instructions: instructions || "Is this valid and true?",
@@ -339,7 +355,9 @@ function normalizeQuestions(input) {
   }
   if (typeof input === "object" && input !== null) {
     const raw = input;
-    if (typeof raw.type === "string" && ["noul", "bool", "boolean", "choice", "score"].includes(raw.type.toLowerCase())) {
+    const hasQuestionKey = typeof raw.instructions === "string" || typeof raw.text === "string" || typeof raw.prompt === "string" || typeof raw.question === "string" || typeof raw.query === "string" || typeof raw.statement === "string";
+    const hasType = typeof raw.type === "string" && ["noul", "bool", "boolean", "yes_no", "true_false", "choice", "score"].includes(raw.type.toLowerCase());
+    if (hasType || hasQuestionKey) {
       return {
         verdict: normalizeQuestion(raw)
       };

@@ -254,10 +254,22 @@ export function normalizeQuestion(input: unknown): Question {
   if (typeof input === "object" && input !== null) {
     const raw = input as Record<string, unknown>;
     const type = typeof raw.type === "string" ? raw.type.toLowerCase() : undefined;
-    const instructions = String(raw.instructions || raw.prompt || raw.question || "").trim();
+    const instructions = String(
+      raw.instructions ||
+      raw.text ||
+      raw.prompt ||
+      raw.question ||
+      raw.query ||
+      raw.statement ||
+      raw.claim ||
+      raw.title ||
+      raw.description ||
+      raw.desc ||
+      "",
+    ).trim();
 
     if (type === "choice") {
-      const rawOpts = raw.criteria ?? raw.options;
+      const rawOpts = raw.criteria ?? raw.options ?? raw.choices;
       let criteria: Record<string, string>;
       if (Array.isArray(rawOpts)) {
         criteria = Object.fromEntries(rawOpts.map((k) => [String(k), String(k)]));
@@ -274,7 +286,7 @@ export function normalizeQuestion(input: unknown): Question {
     }
 
     if (type === "score") {
-      const rawLevels = raw.criteria ?? raw.levels ?? raw.options;
+      const rawLevels = raw.criteria ?? raw.levels ?? raw.options ?? raw.scale ?? raw.choices;
       let criteria: string[];
       if (Array.isArray(rawLevels)) {
         criteria = rawLevels.map(String);
@@ -291,10 +303,26 @@ export function normalizeQuestion(input: unknown): Question {
     }
 
     // Default to noul (boolean)
-    const noulCriteria =
+    const rawCrit =
       raw.criteria && typeof raw.criteria === "object"
         ? (raw.criteria as Record<string, string>)
         : undefined;
+    let noulCriteria: Record<string, string> | undefined = undefined;
+    if (rawCrit) {
+      if (rawCrit.true || rawCrit.false) {
+        noulCriteria = {
+          true: String(rawCrit.true || "true"),
+          false: String(rawCrit.false || "false"),
+        };
+      } else if (rawCrit.yes || rawCrit.no) {
+        noulCriteria = {
+          true: String(rawCrit.yes || "yes"),
+          false: String(rawCrit.no || "no"),
+        };
+      } else {
+        noulCriteria = rawCrit;
+      }
+    }
 
     return {
       type: "noul",
@@ -325,15 +353,25 @@ export function normalizeQuestions(input: SimplifiedQuestionInput): Questions {
 
   if (typeof input === "object" && input !== null) {
     const raw = input as Record<string, unknown>;
-    if (
+    const hasQuestionKey =
+      typeof raw.instructions === "string" ||
+      typeof raw.text === "string" ||
+      typeof raw.prompt === "string" ||
+      typeof raw.question === "string" ||
+      typeof raw.query === "string" ||
+      typeof raw.statement === "string";
+
+    const hasType =
       typeof raw.type === "string" &&
-      ["noul", "bool", "boolean", "choice", "score"].includes(raw.type.toLowerCase())
-    ) {
+      ["noul", "bool", "boolean", "yes_no", "true_false", "choice", "score"].includes(
+        raw.type.toLowerCase(),
+      );
+
+    if (hasType || hasQuestionKey) {
       return {
         verdict: normalizeQuestion(raw),
       };
     }
-
     const result: Questions = {};
     for (const [key, val] of Object.entries(input)) {
       result[key] = normalizeQuestion(val);
