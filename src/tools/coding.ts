@@ -406,16 +406,25 @@ export const jevReviewTool: ToolDefinition = {
   name: "jev_review",
   aliases: ["jev_review_patch"],
   description:
-    "Score a proposed git diff / patch against the task request without confirmation bias.\n" +
-    "USE WHEN: Reviewing code changes to evaluate correctness, spec conformance, test coverage gaps, and blast radius.\n" +
-    "SKIP WHEN: You only have completion claims to verify without a code diff (use jev_verify).\n" +
-    "RETURNS: Rubric scores (0..2), composite score (0..1), safe_to_apply probability, and action (auto | review | escalate).",
+    "Score a proposed git diff / patch against the task request without confirmation bias, with optional Definition-of-Done claim verification.\n" +
+    "USE WHEN: Reviewing code changes during implementation to evaluate correctness, specification conformance, test coverage gaps, and blast radius.\n" +
+    "DO NOT USE WHEN: You have no code diff to review (use jev_verify for pure text claims, or jev_action_gate for shell commands).\n" +
+    "RETURNS: Rubric scores (0..2), composite score (0..1), safe_to_apply probability, action (auto | review | escalate), and claim verdicts if claims are provided.",
   inputSchema: {
     type: "object",
     properties: {
       diff: { type: "string", description: "The git diff or patch text to evaluate." },
       request: { type: "string", description: "The original task request or acceptance specification." },
       tests: { type: "string", description: "Optional output log from executed tests." },
+      claims: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional completion claims to audit against evidence (runs full DoD acceptance gate if provided).",
+      },
+      evidence: {
+        type: "string",
+        description: "Optional test runner logs or execution output supporting the completion claims.",
+      },
       auto_accept: { type: "number", description: "Threshold for auto-approval (default: 0.8)." },
       review_at: { type: "number", description: "Threshold below which to escalate to human (default: min(0.5, auto_accept))." },
       composite_floor: { type: "number", description: "Minimum weighted composite score required for auto (default: 0.7)." },
@@ -423,6 +432,10 @@ export const jevReviewTool: ToolDefinition = {
     required: ["diff", "request"],
   },
   handler: async (args, context) => {
+    const rawArgs = args as Record<string, unknown>;
+    if (Array.isArray(rawArgs.claims) && rawArgs.claims.length > 0 && rawArgs.evidence) {
+      return gatePatch(args as unknown as JevGateInput, context);
+    }
     return reviewDiff(args as unknown as JevReviewInput, context);
   },
 };
@@ -431,9 +444,9 @@ export const jevGateTool: ToolDefinition = {
   name: "jev_gate",
   aliases: ["jev_gate_acceptance"],
   description:
-    "Acceptance gate before declaring a task done: reviews patch diff AND audits developer completion claims against evidence logs.\n" +
-    "USE WHEN: Calling a feature done, closing an issue, or creating a final PR to prevent fake done claims.\n" +
-    "SKIP WHEN: Only scoring a diff without checking test/log assertions (use jev_review).\n" +
+    "Final acceptance gate before declaring a task done: reviews patch diff AND audits developer completion claims against evidence logs.\n" +
+    "USE WHEN: Calling a feature done, closing an issue, or finalizing a PR (Definition of Done) to eliminate fake-done claims.\n" +
+    "DO NOT USE WHEN: Only inspecting an intermediate diff without test runner logs or completion claims (use jev_review).\n" +
     "RETURNS: Review scores and claim verdicts (verified | contradicted | unsupported). Strictly escalates if any claim is contradicted.",
   inputSchema: {
     type: "object",
@@ -466,8 +479,8 @@ export const jevActionGateTool: ToolDefinition = {
   aliases: ["jev_screen_command"],
   description:
     "Pre-execution safety screening before running autonomous shell commands or file operations.\n" +
-    "USE WHEN: About to execute a potentially destructive or production-affecting action (e.g. rm, drop, alter, restart, overwrite).\n" +
-    "SKIP WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files).\n" +
+    "USE WHEN: About to execute a potentially destructive or state-changing action in the terminal (e.g. rm, drop, git reset --hard, curl, alter, overwrite).\n" +
+    "DO NOT USE WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files) or for reviewing code diffs (use jev_review).\n" +
     "RETURNS: Risk score (0..3), touches_prod boolean, and recommendation (allow | confirm | block).",
   inputSchema: {
     type: "object",
@@ -481,7 +494,6 @@ export const jevActionGateTool: ToolDefinition = {
     return screenAction(args as unknown as JevActionGateInput, context);
   },
 };
-
 export const codingTools: ToolDefinition[] = [
   jevReviewTool,
   jevGateTool,

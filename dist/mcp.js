@@ -1540,16 +1540,25 @@ ${input.context}` : "");
 var jevReviewTool = {
   name: "jev_review",
   aliases: ["jev_review_patch"],
-  description: `Score a proposed git diff / patch against the task request without confirmation bias.
-` + `USE WHEN: Reviewing code changes to evaluate correctness, spec conformance, test coverage gaps, and blast radius.
-` + `SKIP WHEN: You only have completion claims to verify without a code diff (use jev_verify).
-` + "RETURNS: Rubric scores (0..2), composite score (0..1), safe_to_apply probability, and action (auto | review | escalate).",
+  description: `Score a proposed git diff / patch against the task request without confirmation bias, with optional Definition-of-Done claim verification.
+` + `USE WHEN: Reviewing code changes during implementation to evaluate correctness, specification conformance, test coverage gaps, and blast radius.
+` + `DO NOT USE WHEN: You have no code diff to review (use jev_verify for pure text claims, or jev_action_gate for shell commands).
+` + "RETURNS: Rubric scores (0..2), composite score (0..1), safe_to_apply probability, action (auto | review | escalate), and claim verdicts if claims are provided.",
   inputSchema: {
     type: "object",
     properties: {
       diff: { type: "string", description: "The git diff or patch text to evaluate." },
       request: { type: "string", description: "The original task request or acceptance specification." },
       tests: { type: "string", description: "Optional output log from executed tests." },
+      claims: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional completion claims to audit against evidence (runs full DoD acceptance gate if provided)."
+      },
+      evidence: {
+        type: "string",
+        description: "Optional test runner logs or execution output supporting the completion claims."
+      },
       auto_accept: { type: "number", description: "Threshold for auto-approval (default: 0.8)." },
       review_at: { type: "number", description: "Threshold below which to escalate to human (default: min(0.5, auto_accept))." },
       composite_floor: { type: "number", description: "Minimum weighted composite score required for auto (default: 0.7)." }
@@ -1557,15 +1566,19 @@ var jevReviewTool = {
     required: ["diff", "request"]
   },
   handler: async (args, context) => {
+    const rawArgs = args;
+    if (Array.isArray(rawArgs.claims) && rawArgs.claims.length > 0 && rawArgs.evidence) {
+      return gatePatch(args, context);
+    }
     return reviewDiff(args, context);
   }
 };
 var jevGateTool = {
   name: "jev_gate",
   aliases: ["jev_gate_acceptance"],
-  description: `Acceptance gate before declaring a task done: reviews patch diff AND audits developer completion claims against evidence logs.
-` + `USE WHEN: Calling a feature done, closing an issue, or creating a final PR to prevent fake done claims.
-` + `SKIP WHEN: Only scoring a diff without checking test/log assertions (use jev_review).
+  description: `Final acceptance gate before declaring a task done: reviews patch diff AND audits developer completion claims against evidence logs.
+` + `USE WHEN: Calling a feature done, closing an issue, or finalizing a PR (Definition of Done) to eliminate fake-done claims.
+` + `DO NOT USE WHEN: Only inspecting an intermediate diff without test runner logs or completion claims (use jev_review).
 ` + "RETURNS: Review scores and claim verdicts (verified | contradicted | unsupported). Strictly escalates if any claim is contradicted.",
   inputSchema: {
     type: "object",
@@ -1596,8 +1609,8 @@ var jevActionGateTool = {
   name: "jev_action_gate",
   aliases: ["jev_screen_command"],
   description: `Pre-execution safety screening before running autonomous shell commands or file operations.
-` + `USE WHEN: About to execute a potentially destructive or production-affecting action (e.g. rm, drop, alter, restart, overwrite).
-` + `SKIP WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files).
+` + `USE WHEN: About to execute a potentially destructive or state-changing action in the terminal (e.g. rm, drop, git reset --hard, curl, alter, overwrite).
+` + `DO NOT USE WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files) or for reviewing code diffs (use jev_review).
 ` + "RETURNS: Risk score (0..3), touches_prod boolean, and recommendation (allow | confirm | block).",
   inputSchema: {
     type: "object",
@@ -1987,8 +2000,8 @@ var jevVerifyTool = {
   name: "jev_verify",
   aliases: ["jev_verify_citations"],
   description: `Test factual claims line-by-line against cited evidence documents with calibrated confidence.
-` + `USE WHEN: A report, PR brief, or summary makes claims with cited text to verify (eliminates LLM confirmation bias).
-` + `SKIP WHEN: No evidence document text exists to check against (use jev_noul).
+` + `USE WHEN: A research brief, PR description, or summary makes factual assertions that must be checked against raw evidence text (eliminates LLM confirmation bias and hallucinations).
+` + `DO NOT USE WHEN: You have a code diff / git patch to review (use jev_review or jev_gate).
 ` + "RETURNS: Per-claim verdicts (verified | contradicted | unsupported), confidence, and same_subject checks.",
   inputSchema: {
     type: "object",
@@ -2015,8 +2028,8 @@ var jevScreenTool = {
   name: "jev_screen",
   aliases: ["jev_screen_content"],
   description: `Screen fetched, pasted, or untrusted text before placing it into the agent context window.
-` + `USE WHEN: About to read web scrapings, user pastes, or external API data into agent memory.
-` + `SKIP WHEN: Text is from a trusted local project file.
+` + `USE WHEN: Incorporating external text (web scrapings, issue comments, user pastes) to detect prompt injection, jailbreaks, hidden instructions, and check task relevance.
+` + `DO NOT USE WHEN: Screening terminal shell commands before execution (use jev_action_gate).
 ` + "RETURNS: Probabilities for prompt injection, substance, relevance, and action (pass | review | block | skip).",
   inputSchema: {
     type: "object",
@@ -2036,8 +2049,8 @@ var jevExtractTool = {
   name: "jev_extract",
   aliases: ["jev_extract_fields"],
   description: `Pull field values verbatim from document text: regex proposes candidates, Jev selects the true match.
-` + `USE WHEN: Extracting structured atoms (prices, versions, dates, IDs) where hallucination must be zero.
-` + `SKIP WHEN: Values are entirely free-form prose that cannot be matched by regex.
+` + `USE WHEN: Parsing raw text documents (invoices, logs, configs) to extract specific values (versions, IDs, metrics) without LLM hallucination.
+` + `DO NOT USE WHEN: Evaluating code logic or reviewing diffs (use jev_review).
 ` + "RETURNS: Verbatim extracted substrings (never generated text) and status (auto | review | not_found).",
   inputSchema: {
     type: "object",
@@ -2069,8 +2082,8 @@ var jevAuditTool = {
   name: "jev_audit",
   aliases: ["jev_audit_records"],
   description: `Audit model-extracted records against the source document to detect hallucinated, off-target, or incomplete values.
-` + `USE WHEN: Verifying extracted key-value pairs or vision/ASR transcript outputs before committing to database.
-` + `SKIP WHEN: The value is a verbatim regex match already extracted by jev_extract, or source text does not exist.
+` + `USE WHEN: Quality-checking structured key-value data extracted from documents before persisting or acting on it.
+` + `DO NOT USE WHEN: Checking code patch quality (use jev_review) or verifying claims against citations (use jev_verify).
 ` + "RETURNS: Action (pass | review | escalate) and failure mode probabilities (hallucinated, off_target, incomplete).",
   inputSchema: {
     type: "object",
@@ -2154,10 +2167,10 @@ ${truncate2(input.context, 1e5).text}` : "Evaluate based on general facts, logic
 }
 var jevJudgeTool = {
   name: "jev_judge",
-  description: `Universal flexible TypeSafe Jev decision primitive for boolean, choice, or ordinal scoring.
-` + `USE WHEN: You need an open-ended single or multi-criteria evaluation not covered by specialized tools.
-` + `SKIP WHEN: A specialized tool exists (e.g. jev_gate for acceptance, jev_verify for citations).
-` + "RETURNS: Typed verdicts, calibrated probabilities, and confidence scores.",
+  description: `Universal flexible TypeSafe Jev decision primitive for boolean propositions, multi-choice, or ordinal scoring.
+` + `USE WHEN: You need an open-ended calibrated judgment, custom question rubric, or multi-criteria decision not covered by domain tools.
+` + `DO NOT USE WHEN: A specialized tool exists (use jev_review for code diffs, jev_action_gate for shell commands, jev_verify for text citations).
+` + "RETURNS: Typed verdicts, calibrated probabilities (0.0 to 1.0), and confidence scores.",
   inputSchema: {
     type: "object",
     properties: {
@@ -2176,10 +2189,10 @@ var jevJudgeTool = {
 };
 var jevJudgeBatchTool = {
   name: "jev_judge_batch",
-  description: `Evaluate multiple independent items or requests in batch concurrently with rate limiting and throughput control.
-` + `USE WHEN: Processing a queue or list of items simultaneously.
-` + `SKIP WHEN: Judging a single situation (use jev_judge).
-` + "RETURNS: Array of item results with individual verdicts.",
+  description: `Evaluate multiple independent items or requests concurrently with rate limiting and throughput control.
+` + `USE WHEN: Processing a queue or list of independent questions/evaluations simultaneously in batch.
+` + `DO NOT USE WHEN: Evaluating a single situation or code snippet (use jev_judge).
+` + "RETURNS: Array of item results with individual verdicts and calibrated probabilities.",
   inputSchema: {
     type: "object",
     properties: {
@@ -2210,10 +2223,10 @@ var jevJudgeBatchTool = {
 var jevNoulTool = {
   name: "jev_noul",
   aliases: ["jev_check_probability"],
-  description: `Compute calibrated probability (0.0 to 1.0) for stated propositions or hypotheses.
-` + `USE WHEN: You need an objective truth probability for stated assertions.
-` + `SKIP WHEN: Checking claims against a specific citation or document (use jev_verify).
-` + "RETURNS: Probability (0..1), likely/unlikely label, and auto-acceptance thresholding.",
+  description: `Compute calibrated truth probability (0.0 to 1.0) for a list of simple propositions or hypotheses without custom rubrics.
+` + `USE WHEN: You only have simple statements to test for truth probability without questions, criteria, or score levels.
+` + `DO NOT USE WHEN: You have cited evidence documents to fact-check against (use jev_verify) or complex rubrics (use jev_judge).
+` + "RETURNS: Probability per proposition (0.0 to 1.0) and likely / unlikely classification.",
   inputSchema: {
     type: "object",
     properties: {
@@ -2604,8 +2617,8 @@ var jevDecideTool = {
   name: "jev_decide",
   aliases: ["jev_decide_architecture"],
   description: `Arbitrate one bounded technical or architectural choice among 2-6 candidates with requirements, evidence, and priorities.
-` + `USE WHEN: Deciding between 2-6 concrete alternatives with trade-offs, evidence, and user priorities.
-` + `SKIP WHEN: The choice is routine, trivial, or already decided by user instruction.
+` + `USE WHEN: Choosing between 2-6 concrete design options, libraries, or architectural alternatives with trade-offs.
+` + `DO NOT USE WHEN: The question is a simple true/false or general rubric evaluation (use jev_judge).
 ` + "RETURNS: Selected candidate ID, confidence score, requirement checks, and escape hatches (ask_user, investigate, none).",
   inputSchema: {
     type: "object",
@@ -2641,10 +2654,10 @@ var jevDecideTool = {
 var jevFindTool = {
   name: "jev_find",
   aliases: ["jev_find_best"],
-  description: `Pick the single best candidate from an array by semantic meaning and determine if any candidate actually answers the query.
-` + `USE WHEN: Picking the one best candidate among several choices (files, notes, code snippets).
-` + `SKIP WHEN: An exact regex or keyword match decides it deterministically (use grep/rg).
-` + "RETURNS: exists_verdict (answered | partial | absent) and top candidates ranked by probability.",
+  description: `Semantic search to pick the single best candidate from an array and determine if any candidate actually answers the query.
+` + `USE WHEN: Picking the single best candidate among several choices (files, notes, code snippets) or verifying if a valid answer exists.
+` + `DO NOT USE WHEN: You need an entire list sorted and ranked by relevance (use jev_rerank), or when regex/grep search suffices.
+` + "RETURNS: exists_verdict (answered | partial | absent) and top candidates ranked by calibrated probability.",
   inputSchema: {
     type: "object",
     properties: {
@@ -2672,10 +2685,10 @@ var jevFindTool = {
 var jevRerankTool = {
   name: "jev_rerank",
   aliases: ["jev_rerank_candidates"],
-  description: `Score every candidate independently by semantic relevance without an external vector database.
-` + `USE WHEN: Full ordering matters (retrieval results, deduplication triage, feed ranking).
-` + `SKIP WHEN: You only need the single best hit (use jev_find).
-` + "RETURNS: Ranked array of candidates with rank order and relevance scores (0..1).",
+  description: `Score and rank an entire list of candidates by semantic relevance without an external vector database.
+` + `USE WHEN: Full relevance ordering across all candidates is needed (retrieval ranking, search deduplication).
+` + `DO NOT USE WHEN: You only need the single best candidate or need to check if an answer exists (use jev_find).
+` + "RETURNS: Complete ranked array of candidates with rank order and relevance scores (0.0 to 1.0).",
   inputSchema: {
     type: "object",
     properties: {
@@ -2703,10 +2716,10 @@ var jevRerankTool = {
 var jevCompareTool = {
   name: "jev_compare",
   aliases: ["jev_compare_passages"],
-  description: `Judge how two passages relate overall and per aspect (same_fact | contradicts | different_facts).
-` + `USE WHEN: Comparing two documents, spec vs implementation, or detecting contradictory assertions.
-` + `SKIP WHEN: You already know how the passages relate.
-` + "RETURNS: Relation verdict, confidence, and per-aspect comparison breakdown.",
+  description: `Judge how two text passages relate overall and per aspect (same_fact | contradicts | different_facts).
+` + `USE WHEN: Comparing two documents, contract specs, or checking for contradictory factual statements across texts.
+` + `DO NOT USE WHEN: Reviewing a code diff or patch against requirements (use jev_review).
+` + "RETURNS: Overall relation verdict (same_fact | contradicts | different_facts), confidence, and per-aspect comparison breakdown.",
   inputSchema: {
     type: "object",
     properties: {
@@ -4639,6 +4652,10 @@ var $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
     return payload;
   };
 });
+var $ZodAny = /* @__PURE__ */ $constructor("$ZodAny", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.parse = (payload) => payload;
+});
 var $ZodUnknown = /* @__PURE__ */ $constructor("$ZodUnknown", (inst, def) => {
   $ZodType.init(inst, def);
   inst._zod.parse = (payload) => payload;
@@ -6184,6 +6201,11 @@ function _boolean(Class, params) {
     ...normalizeParams(params)
   });
 }
+function _any(Class) {
+  return new Class({
+    type: "any"
+  });
+}
 function _unknown(Class) {
   return new Class({
     type: "unknown"
@@ -7072,6 +7094,7 @@ var booleanProcessor = (_schema, _ctx, json, _params) => {
 var neverProcessor = (_schema, _ctx, json, _params) => {
   json.not = {};
 };
+var anyProcessor = (_schema, _ctx, _json, _params) => {};
 var unknownProcessor = (_schema, _ctx, _json, _params) => {};
 var enumProcessor = (schema, _ctx, json, _params) => {
   const def = schema._zod.def;
@@ -7832,6 +7855,14 @@ var ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
 function boolean2(params) {
   return _boolean(ZodBoolean, params);
 }
+var ZodAny = /* @__PURE__ */ $constructor("ZodAny", (inst, def) => {
+  $ZodAny.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => anyProcessor(inst, ctx, json, params);
+});
+function any() {
+  return _any(ZodAny);
+}
 var ZodUnknown = /* @__PURE__ */ $constructor("ZodUnknown", (inst, def) => {
   $ZodUnknown.init(inst, def);
   ZodType.init(inst, def);
@@ -8180,6 +8211,8 @@ var reviewSchema = object({
   diff: string2().min(1, "diff cannot be empty").max(50000, "diff exceeds 50,000 characters"),
   request: string2().min(1, "request cannot be empty").max(50000, "request exceeds 50,000 characters"),
   tests: string2().max(50000).optional(),
+  claims: array(string2().min(1).max(2000)).max(16).optional(),
+  evidence: union([string2().max(200000), array(any())]).optional(),
   auto_accept: thresholdNumber.optional(),
   review_at: thresholdNumber.optional(),
   composite_floor: thresholdNumber.optional(),

@@ -459,8 +459,8 @@ export const jevVerifyTool: ToolDefinition = {
   aliases: ["jev_verify_citations"],
   description:
     "Test factual claims line-by-line against cited evidence documents with calibrated confidence.\n" +
-    "USE WHEN: A report, PR brief, or summary makes claims with cited text to verify (eliminates LLM confirmation bias).\n" +
-    "SKIP WHEN: No evidence document text exists to check against (use jev_noul).\n" +
+    "USE WHEN: A research brief, PR description, or summary makes factual assertions that must be checked against raw evidence text (eliminates LLM confirmation bias and hallucinations).\n" +
+    "DO NOT USE WHEN: You have a code diff / git patch to review (use jev_review or jev_gate).\n" +
     "RETURNS: Per-claim verdicts (verified | contradicted | unsupported), confidence, and same_subject checks.",
   inputSchema: {
     type: "object",
@@ -489,8 +489,8 @@ export const jevScreenTool: ToolDefinition = {
   aliases: ["jev_screen_content"],
   description:
     "Screen fetched, pasted, or untrusted text before placing it into the agent context window.\n" +
-    "USE WHEN: About to read web scrapings, user pastes, or external API data into agent memory.\n" +
-    "SKIP WHEN: Text is from a trusted local project file.\n" +
+    "USE WHEN: Incorporating external text (web scrapings, issue comments, user pastes) to detect prompt injection, jailbreaks, hidden instructions, and check task relevance.\n" +
+    "DO NOT USE WHEN: Screening terminal shell commands before execution (use jev_action_gate).\n" +
     "RETURNS: Probabilities for prompt injection, substance, relevance, and action (pass | review | block | skip).",
   inputSchema: {
     type: "object",
@@ -512,8 +512,8 @@ export const jevExtractTool: ToolDefinition = {
   aliases: ["jev_extract_fields"],
   description:
     "Pull field values verbatim from document text: regex proposes candidates, Jev selects the true match.\n" +
-    "USE WHEN: Extracting structured atoms (prices, versions, dates, IDs) where hallucination must be zero.\n" +
-    "SKIP WHEN: Values are entirely free-form prose that cannot be matched by regex.\n" +
+    "USE WHEN: Parsing raw text documents (invoices, logs, configs) to extract specific values (versions, IDs, metrics) without LLM hallucination.\n" +
+    "DO NOT USE WHEN: Evaluating code logic or reviewing diffs (use jev_review).\n" +
     "RETURNS: Verbatim extracted substrings (never generated text) and status (auto | review | not_found).",
   inputSchema: {
     type: "object",
@@ -547,8 +547,8 @@ export const jevAuditTool: ToolDefinition = {
   aliases: ["jev_audit_records"],
   description:
     "Audit model-extracted records against the source document to detect hallucinated, off-target, or incomplete values.\n" +
-    "USE WHEN: Verifying extracted key-value pairs or vision/ASR transcript outputs before committing to database.\n" +
-    "SKIP WHEN: The value is a verbatim regex match already extracted by jev_extract, or source text does not exist.\n" +
+    "USE WHEN: Quality-checking structured key-value data extracted from documents before persisting or acting on it.\n" +
+    "DO NOT USE WHEN: Checking code patch quality (use jev_review) or verifying claims against citations (use jev_verify).\n" +
     "RETURNS: Action (pass | review | escalate) and failure mode probabilities (hallucinated, off_target, incomplete).",
   inputSchema: {
     type: "object",

@@ -21,6 +21,8 @@ export const reviewSchema = z
     diff: z.string().min(1, "diff cannot be empty").max(50_000, "diff exceeds 50,000 characters"),
     request: z.string().min(1, "request cannot be empty").max(50_000, "request exceeds 50,000 characters"),
     tests: z.string().max(50_000).optional(),
+    claims: z.array(z.string().min(1).max(2_000)).max(16).optional(),
+    evidence: z.union([z.string().max(200_000), z.array(z.any())]).optional(),
     auto_accept: thresholdNumber.optional(),
     review_at: thresholdNumber.optional(),
     composite_floor: thresholdNumber.optional(),

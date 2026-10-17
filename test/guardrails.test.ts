@@ -30,10 +30,11 @@ Python was conceived in the late 1980s by Guido van Rossum at CWI in the Netherl
 
       expect(res.claims).toHaveLength(3);
       expect(res.claims[0].verdict).toBe("verified");
-      expect(res.claims[1].relation_verdict).toBe("contradicted");
+      expect(res.claims[1].verdict).toBe("contradicted");
       expect(res.claims[2].verdict).toBe("unsupported");
       expect(res.summary.verified).toBe(1);
-      expect(res.summary.unsupported).toBe(2);
+      expect(res.summary.contradicted).toBe(1);
+      expect(res.summary.unsupported).toBe(1);
     },
     20_000,
   );

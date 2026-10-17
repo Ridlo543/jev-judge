@@ -450,8 +450,8 @@ export const jevDecideTool: ToolDefinition = {
   aliases: ["jev_decide_architecture"],
   description:
     "Arbitrate one bounded technical or architectural choice among 2-6 candidates with requirements, evidence, and priorities.\n" +
-    "USE WHEN: Deciding between 2-6 concrete alternatives with trade-offs, evidence, and user priorities.\n" +
-    "SKIP WHEN: The choice is routine, trivial, or already decided by user instruction.\n" +
+    "USE WHEN: Choosing between 2-6 concrete design options, libraries, or architectural alternatives with trade-offs.\n" +
+    "DO NOT USE WHEN: The question is a simple true/false or general rubric evaluation (use jev_judge).\n" +
     "RETURNS: Selected candidate ID, confidence score, requirement checks, and escape hatches (ask_user, investigate, none).",
   inputSchema: {
     type: "object",
@@ -489,10 +489,10 @@ export const jevFindTool: ToolDefinition = {
   name: "jev_find",
   aliases: ["jev_find_best"],
   description:
-    "Pick the single best candidate from an array by semantic meaning and determine if any candidate actually answers the query.\n" +
-    "USE WHEN: Picking the one best candidate among several choices (files, notes, code snippets).\n" +
-    "SKIP WHEN: An exact regex or keyword match decides it deterministically (use grep/rg).\n" +
-    "RETURNS: exists_verdict (answered | partial | absent) and top candidates ranked by probability.",
+    "Semantic search to pick the single best candidate from an array and determine if any candidate actually answers the query.\n" +
+    "USE WHEN: Picking the single best candidate among several choices (files, notes, code snippets) or verifying if a valid answer exists.\n" +
+    "DO NOT USE WHEN: You need an entire list sorted and ranked by relevance (use jev_rerank), or when regex/grep search suffices.\n" +
+    "RETURNS: exists_verdict (answered | partial | absent) and top candidates ranked by calibrated probability.",
   inputSchema: {
     type: "object",
     properties: {
@@ -522,10 +522,10 @@ export const jevRerankTool: ToolDefinition = {
   name: "jev_rerank",
   aliases: ["jev_rerank_candidates"],
   description:
-    "Score every candidate independently by semantic relevance without an external vector database.\n" +
-    "USE WHEN: Full ordering matters (retrieval results, deduplication triage, feed ranking).\n" +
-    "SKIP WHEN: You only need the single best hit (use jev_find).\n" +
-    "RETURNS: Ranked array of candidates with rank order and relevance scores (0..1).",
+    "Score and rank an entire list of candidates by semantic relevance without an external vector database.\n" +
+    "USE WHEN: Full relevance ordering across all candidates is needed (retrieval ranking, search deduplication).\n" +
+    "DO NOT USE WHEN: You only need the single best candidate or need to check if an answer exists (use jev_find).\n" +
+    "RETURNS: Complete ranked array of candidates with rank order and relevance scores (0.0 to 1.0).",
   inputSchema: {
     type: "object",
     properties: {
@@ -555,10 +555,10 @@ export const jevCompareTool: ToolDefinition = {
   name: "jev_compare",
   aliases: ["jev_compare_passages"],
   description:
-    "Judge how two passages relate overall and per aspect (same_fact | contradicts | different_facts).\n" +
-    "USE WHEN: Comparing two documents, spec vs implementation, or detecting contradictory assertions.\n" +
-    "SKIP WHEN: You already know how the passages relate.\n" +
-    "RETURNS: Relation verdict, confidence, and per-aspect comparison breakdown.",
+    "Judge how two text passages relate overall and per aspect (same_fact | contradicts | different_facts).\n" +
+    "USE WHEN: Comparing two documents, contract specs, or checking for contradictory factual statements across texts.\n" +
+    "DO NOT USE WHEN: Reviewing a code diff or patch against requirements (use jev_review).\n" +
+    "RETURNS: Overall relation verdict (same_fact | contradicts | different_facts), confidence, and per-aspect comparison breakdown.",
   inputSchema: {
     type: "object",
     properties: {
