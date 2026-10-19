@@ -1,6 +1,6 @@
 {
   "name": "jev-judge",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "Universal TypeSafe Jev Decision Model Runner & MCP Server (OpenAI-Compatible & Direct)",
   "main": "dist/index.js",
   "module": "src/index.ts",
@@ -25,7 +25,9 @@
     "test": "bun test",
     "check": "tsc --noEmit",
     "build": "bun build src/cli.ts src/mcp.ts src/index.ts --outdir dist --target node",
-    "compile": "bun scripts/compile.ts"
+    "compile": "bun scripts/compile.ts",
+    "compile:linux": "bun scripts/compile.ts --linux",
+    "compile:all": "bun scripts/compile.ts --all"
   },
   "keywords": [
     "jev",

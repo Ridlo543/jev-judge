@@ -4,15 +4,48 @@ import { spawnSync } from "node:child_process";
 
 const isWindows = process.platform === "win32";
 
-interface Target {
+interface CompileJob {
   entry: string;
   outfile: string;
+  bunTarget?: string;
 }
 
-const targets: Target[] = [
-  { entry: "src/cli.ts", outfile: isWindows ? "jev.exe" : "jev" },
-  { entry: "src/mcp.ts", outfile: isWindows ? "jev-mcp.exe" : "jev-mcp" },
-];
+function resolveJobs(): CompileJob[] {
+  const args = process.argv.slice(2);
+  const hasLinux = args.includes("--linux") || args.includes("-l");
+  const hasAll = args.includes("--all") || args.includes("-a");
+  const hasDarwin = args.includes("--darwin") || args.includes("--macos");
+
+  if (hasAll) {
+    return [
+      { entry: "src/cli.ts", outfile: isWindows ? "jev.exe" : "jev" },
+      { entry: "src/mcp.ts", outfile: isWindows ? "jev-mcp.exe" : "jev-mcp" },
+      { entry: "src/cli.ts", outfile: "jev-linux-x64", bunTarget: "bun-linux-x64" },
+      { entry: "src/mcp.ts", outfile: "jev-mcp-linux-x64", bunTarget: "bun-linux-x64" },
+      { entry: "src/cli.ts", outfile: "jev-darwin-arm64", bunTarget: "bun-darwin-arm64" },
+      { entry: "src/mcp.ts", outfile: "jev-mcp-darwin-arm64", bunTarget: "bun-darwin-arm64" },
+    ];
+  }
+
+  if (hasLinux) {
+    return [
+      { entry: "src/cli.ts", outfile: "jev-linux-x64", bunTarget: "bun-linux-x64" },
+      { entry: "src/mcp.ts", outfile: "jev-mcp-linux-x64", bunTarget: "bun-linux-x64" },
+    ];
+  }
+
+  if (hasDarwin) {
+    return [
+      { entry: "src/cli.ts", outfile: "jev-darwin-arm64", bunTarget: "bun-darwin-arm64" },
+      { entry: "src/mcp.ts", outfile: "jev-mcp-darwin-arm64", bunTarget: "bun-darwin-arm64" },
+    ];
+  }
+
+  return [
+    { entry: "src/cli.ts", outfile: isWindows ? "jev.exe" : "jev" },
+    { entry: "src/mcp.ts", outfile: isWindows ? "jev-mcp.exe" : "jev-mcp" },
+  ];
+}
 
 /**
  * Safely clears a target path on Windows even if an active process is executing it.
@@ -67,18 +100,27 @@ async function main(): Promise<void> {
   const rootDir = process.cwd();
   cleanupStaleOldBinaries(rootDir);
 
-  for (const t of targets) {
-    const fullOutPath = path.resolve(rootDir, t.outfile);
+  const jobs = resolveJobs();
+  console.log(`[compile] Starting compilation for ${jobs.length} target(s)...`);
+
+  for (const job of jobs) {
+    const fullOutPath = path.resolve(rootDir, job.outfile);
     prepareTarget(fullOutPath);
 
-    console.log(`[compile] Compiling ${t.entry} -> ${t.outfile}...`);
-    const res = spawnSync("bun", ["build", "--compile", "--outfile", t.outfile, t.entry], {
+    const buildArgs = ["build", "--compile"];
+    if (job.bunTarget) {
+      buildArgs.push(`--target=${job.bunTarget}`);
+    }
+    buildArgs.push("--outfile", job.outfile, job.entry);
+
+    console.log(`[compile] Compiling ${job.entry} -> ${job.outfile} ${job.bunTarget ? `(${job.bunTarget})` : ""}...`);
+    const res = spawnSync("bun", buildArgs, {
       stdio: "inherit",
       shell: isWindows,
     });
 
     if (res.status !== 0) {
-      console.error(`[compile] Compilation failed for ${t.outfile} with exit code ${res.status}`);
+      console.error(`[compile] Compilation failed for ${job.outfile} with exit code ${res.status}`);
       process.exit(res.status ?? 1);
     }
   }
