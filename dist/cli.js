@@ -8,7 +8,7 @@ import * as fs3 from "fs";
 import * as fs from "node:fs";
 import * as path from "node:path";
 var DEFAULT_PROTOCOL = "chat-completions";
-var DEFAULT_TIMEOUT_MS = 20000;
+var DEFAULT_TIMEOUT_MS = 35000;
 var DEFAULT_THRESHOLD = 0.5;
 function redactApiKey(key) {
   if (!key)
@@ -172,10 +172,27 @@ async function rawJevJudgment(state, questions, options = {}) {
       targetUrl = `${targetUrl}/chat/completions`;
     }
   }
+  let userContent = "";
+  if (typeof state === "string" && state.trim().length > 0) {
+    userContent = state.trim();
+  } else if (state !== null && state !== undefined) {
+    userContent = typeof state === "object" ? JSON.stringify(state, null, 2) : String(state);
+  }
+  if (!userContent) {
+    const qList = Object.entries(questions).map(([k, q]) => `${k}: ${q.instructions}`).join(`
+`);
+    userContent = qList || "Evaluate the questions.";
+  }
   const payload = {
     model,
     state,
-    questions
+    questions,
+    messages: [
+      {
+        role: "user",
+        content: userContent
+      }
+    ]
   };
   const t0 = performance.now();
   let lastError = null;
@@ -215,9 +232,16 @@ async function rawJevJudgment(state, questions, options = {}) {
       let parsedAnswers = null;
       let returnedModel = model;
       let usage;
-      if (protocol === "chat-completions") {
+      if (rawJson.answers && typeof rawJson.answers === "object") {
+        parsedAnswers = rawJson.answers;
+        if (typeof rawJson.model === "string")
+          returnedModel = rawJson.model;
+        if (rawJson.usage && typeof rawJson.usage === "object") {
+          usage = rawJson.usage;
+        }
+      } else if (rawJson.choices && Array.isArray(rawJson.choices)) {
         const choices = rawJson.choices;
-        const contentRaw = choices?.[0]?.message?.content;
+        const contentRaw = choices[0]?.message?.content;
         if (!contentRaw) {
           throw new Error(`Invalid OpenAI-compatible response: missing message.content in choices[0]. Raw: ${JSON.stringify(rawJson).slice(0, 300)}`);
         }
@@ -241,9 +265,6 @@ async function rawJevJudgment(state, questions, options = {}) {
         parsedAnswers = rawJson.answers || rawJson;
         if (typeof rawJson.model === "string")
           returnedModel = rawJson.model;
-        if (rawJson.usage && typeof rawJson.usage === "object") {
-          usage = rawJson.usage;
-        }
       }
       if (!parsedAnswers || typeof parsedAnswers !== "object") {
         throw new Error(`Jev response missing 'answers' object. Endpoint: ${targetUrl}, Protocol: ${protocol}`);
@@ -1250,10 +1271,27 @@ async function rawJevJudgment2(state, questions, options = {}) {
       targetUrl = `${targetUrl}/chat/completions`;
     }
   }
+  let userContent = "";
+  if (typeof state === "string" && state.trim().length > 0) {
+    userContent = state.trim();
+  } else if (state !== null && state !== undefined) {
+    userContent = typeof state === "object" ? JSON.stringify(state, null, 2) : String(state);
+  }
+  if (!userContent) {
+    const qList = Object.entries(questions).map(([k, q]) => `${k}: ${q.instructions}`).join(`
+`);
+    userContent = qList || "Evaluate the questions.";
+  }
   const payload = {
     model,
     state,
-    questions
+    questions,
+    messages: [
+      {
+        role: "user",
+        content: userContent
+      }
+    ]
   };
   const t0 = performance.now();
   let lastError = null;
@@ -1293,9 +1331,16 @@ async function rawJevJudgment2(state, questions, options = {}) {
       let parsedAnswers = null;
       let returnedModel = model;
       let usage;
-      if (protocol === "chat-completions") {
+      if (rawJson.answers && typeof rawJson.answers === "object") {
+        parsedAnswers = rawJson.answers;
+        if (typeof rawJson.model === "string")
+          returnedModel = rawJson.model;
+        if (rawJson.usage && typeof rawJson.usage === "object") {
+          usage = rawJson.usage;
+        }
+      } else if (rawJson.choices && Array.isArray(rawJson.choices)) {
         const choices = rawJson.choices;
-        const contentRaw = choices?.[0]?.message?.content;
+        const contentRaw = choices[0]?.message?.content;
         if (!contentRaw) {
           throw new Error(`Invalid OpenAI-compatible response: missing message.content in choices[0]. Raw: ${JSON.stringify(rawJson).slice(0, 300)}`);
         }
@@ -1319,9 +1364,6 @@ async function rawJevJudgment2(state, questions, options = {}) {
         parsedAnswers = rawJson.answers || rawJson;
         if (typeof rawJson.model === "string")
           returnedModel = rawJson.model;
-        if (rawJson.usage && typeof rawJson.usage === "object") {
-          usage = rawJson.usage;
-        }
       }
       if (!parsedAnswers || typeof parsedAnswers !== "object") {
         throw new Error(`Jev response missing 'answers' object. Endpoint: ${targetUrl}, Protocol: ${protocol}`);

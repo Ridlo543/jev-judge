@@ -29,7 +29,9 @@ jev-linux-x64
 jev-mcp-linux-x64
 jev-darwin-arm64
 jev-mcp-darwin-arm64
-
+jev-linux-arm64
+jev-mcp-linux-arm64
+*.tar.gz
 # Operating System & IDE artifacts
 .codegraph/
 .DS_Store

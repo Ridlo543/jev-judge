@@ -85,10 +85,30 @@ export async function rawJevJudgment(
     }
   }
 
-  const payload = {
+  let userContent = "";
+  if (typeof state === "string" && state.trim().length > 0) {
+    userContent = state.trim();
+  } else if (state !== null && state !== undefined) {
+    userContent = typeof state === "object" ? JSON.stringify(state, null, 2) : String(state);
+  }
+
+  if (!userContent) {
+    const qList = Object.entries(questions)
+      .map(([k, q]) => `${k}: ${q.instructions}`)
+      .join("\n");
+    userContent = qList || "Evaluate the questions.";
+  }
+
+  const payload: Record<string, unknown> = {
     model,
     state,
     questions,
+    messages: [
+      {
+        role: "user",
+        content: userContent,
+      },
+    ],
   };
 
   const t0 = performance.now();
@@ -143,9 +163,17 @@ export async function rawJevJudgment(
       let returnedModel = model;
       let usage: JevJudgeResult["usage"];
 
-      if (protocol === "chat-completions") {
-        const choices = rawJson.choices as Array<{ message?: { content?: string } }> | undefined;
-        const contentRaw = choices?.[0]?.message?.content;
+      // Support both root .answers (jerouter, systemone, OpenCode zen, typesafe-direct)
+      // and OpenAI-compatible choices[0].message.content
+      if (rawJson.answers && typeof rawJson.answers === "object") {
+        parsedAnswers = rawJson.answers as Answers;
+        if (typeof rawJson.model === "string") returnedModel = rawJson.model;
+        if (rawJson.usage && typeof rawJson.usage === "object") {
+          usage = rawJson.usage as JevJudgeResult["usage"];
+        }
+      } else if (rawJson.choices && Array.isArray(rawJson.choices)) {
+        const choices = rawJson.choices as Array<{ message?: { content?: string } }>;
+        const contentRaw = choices[0]?.message?.content;
         if (!contentRaw) {
           throw new Error(
             `Invalid OpenAI-compatible response: missing message.content in choices[0]. Raw: ${JSON.stringify(
@@ -154,10 +182,12 @@ export async function rawJevJudgment(
           );
         }
 
-        // Clean potential markdown fences (e.g. ```json ... ```) emitted by proxies or models
         let cleanContent = contentRaw.trim();
         if (cleanContent.startsWith("```")) {
-          cleanContent = cleanContent.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```$/, "").trim();
+          cleanContent = cleanContent
+            .replace(/^```(?:json)?\s*\n?/i, "")
+            .replace(/\n?\s*```$/, "")
+            .trim();
         }
 
         try {
@@ -182,12 +212,8 @@ export async function rawJevJudgment(
           usage = rawUsage;
         }
       } else {
-        // typesafe-direct
         parsedAnswers = (rawJson.answers as Answers) || (rawJson as unknown as Answers);
         if (typeof rawJson.model === "string") returnedModel = rawJson.model;
-        if (rawJson.usage && typeof rawJson.usage === "object") {
-          usage = rawJson.usage as JevJudgeResult["usage"];
-        }
       }
 
       if (!parsedAnswers || typeof parsedAnswers !== "object") {

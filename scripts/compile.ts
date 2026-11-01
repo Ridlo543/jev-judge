@@ -22,6 +22,8 @@ function resolveJobs(): CompileJob[] {
       { entry: "src/mcp.ts", outfile: isWindows ? "jev-mcp.exe" : "jev-mcp" },
       { entry: "src/cli.ts", outfile: "jev-linux-x64", bunTarget: "bun-linux-x64" },
       { entry: "src/mcp.ts", outfile: "jev-mcp-linux-x64", bunTarget: "bun-linux-x64" },
+      { entry: "src/cli.ts", outfile: "jev-linux-arm64", bunTarget: "bun-linux-arm64" },
+      { entry: "src/mcp.ts", outfile: "jev-mcp-linux-arm64", bunTarget: "bun-linux-arm64" },
       { entry: "src/cli.ts", outfile: "jev-darwin-arm64", bunTarget: "bun-darwin-arm64" },
       { entry: "src/mcp.ts", outfile: "jev-mcp-darwin-arm64", bunTarget: "bun-darwin-arm64" },
     ];

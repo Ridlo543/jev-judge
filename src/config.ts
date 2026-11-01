@@ -25,7 +25,7 @@ export interface JevConfigInput {
   outputFormat?: JevOutputFormat | string;
 }
 export const DEFAULT_PROTOCOL: JevProtocol = "chat-completions";
-export const DEFAULT_TIMEOUT_MS = 20_000;
+export const DEFAULT_TIMEOUT_MS = 35_000;
 export const DEFAULT_THRESHOLD = 0.5;
 
 /** Redacts sensitive API keys for safe logging and error messages. */
