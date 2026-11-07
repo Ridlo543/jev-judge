@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 // src/config.ts
 import * as fs from "node:fs";

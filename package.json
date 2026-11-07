@@ -1,11 +1,12 @@
 {
-  "name": "systemone",
-  "version": "1.0.0",
+  "name": "systemone-judge",
+  "version": "1.0.3",
   "description": "Universal System One Decision Model Runner & MCP Server (Laya, Jev, and OpenAI-Compatible)",
   "main": "dist/index.js",
   "module": "src/index.ts",
   "types": "src/index.ts",
   "bin": {
+    "systemone-judge": "dist/cli.js",
     "systemone": "dist/cli.js",
     "s1": "dist/cli.js",
     "systemone-mcp": "dist/mcp.js",

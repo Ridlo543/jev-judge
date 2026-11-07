@@ -16,14 +16,14 @@ Works with any OpenAI-compatible endpoint, direct TypeSafe decision gateway, or 
 ### 1. Interactive Setup (Zero Install)
 Run the setup wizard to configure your agent automatically:
 ```bash
-npx -y systemone setup
+npx -y -p systemone-judge systemone setup
 ```
 The wizard auto-detects Claude Code, Oh My Pi, Cursor, or local workspaces and configures the connection.
 
 ### 2. Run MCP Server Directly
 ```bash
 # In your .mcp.json or agent config:
-npx -y systemone mcp
+npx -y -p systemone-judge systemone-mcp
 ```
 
 ### 3. One-Liner System Install (Standalone Binaries)
@@ -72,7 +72,7 @@ jev "rm -rf /var/log/*" "Is this safe to run automatically?" --laya
     "jev": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "github:Ridlo543/jev-judge", "mcp"],
+      "args": ["-y", "-p", "systemone-judge", "systemone-mcp"],
       "env": {
         "JEV_BASE_URL": "https://router.ainything.online/v1",
         "JEV_MODEL": "systemone",
@@ -87,9 +87,9 @@ jev "rm -rf /var/log/*" "Is this safe to run automatically?" --laya
 ```json
 {
   "mcpServers": {
-    "jev": {
+    "systemone": {
       "type": "stdio",
-      "command": "jev-mcp",
+      "command": "systemone-mcp",
       "args": [],
       "env": {
         "JEV_BASE_URL": "http://127.0.0.1:20130/v1",
@@ -108,7 +108,7 @@ jev "rm -rf /var/log/*" "Is this safe to run automatically?" --laya
     "jev": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "github:Ridlo543/jev-judge", "mcp"],
+      "args": ["-y", "-p", "systemone-judge", "systemone-mcp"],
       "env": {
         "JEV_BASE_URL": "https://api.openai.com/v1",
         "JEV_MODEL": "jev-latest",

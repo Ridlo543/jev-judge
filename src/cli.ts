@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import * as fs from "node:fs";
 import { judge, judgeBatch, type SimplifiedQuestionInput } from "./client";
 import { resolveConfig } from "./config";

@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { resolveConfig } from "./config";
 import { formatToolResult } from "./formatter";
 import { allTools, coreTools, toolsByName } from "./tools";

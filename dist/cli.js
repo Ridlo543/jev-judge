@@ -1,8 +1,7 @@
-#!/usr/bin/env bun
-// @bun
+#!/usr/bin/env node
 
 // src/cli.ts
-import * as fs3 from "fs";
+import * as fs3 from "node:fs";
 
 // src/config.ts
 import * as fs from "node:fs";
@@ -543,6 +542,58 @@ async function judge(state, questionInput, options = {}) {
     state,
     raw: result
   };
+}
+async function judgeBool(state, instructions, options = {}) {
+  const threshold = options.threshold ?? options.defaultThreshold ?? 0.5;
+  const res = await judge(state, instructions, options);
+  return (res.probability ?? (res.verdict === true ? 1 : 0)) >= threshold;
+}
+async function judgeProbability(state, instructions, options = {}) {
+  const res = await judge(state, instructions, options);
+  return res.probability ?? (res.verdict === true ? 1 : 0);
+}
+async function judgeChoice(state, instructions, options, clientOptions = {}) {
+  const res = await judge(state, {
+    type: "choice",
+    instructions,
+    options
+  }, clientOptions);
+  return String(res.verdict);
+}
+async function judgeScore(state, instructions, levels, clientOptions = {}) {
+  const res = await judge(state, {
+    type: "score",
+    instructions,
+    levels
+  }, clientOptions);
+  return Number(res.verdict);
+}
+async function judgeMulti(state, questionsMap, clientOptions = {}) {
+  return judge(state, questionsMap, clientOptions);
+}
+async function judgeBatch(items, options = {}) {
+  const concurrency = Math.max(1, options.concurrency ?? 3);
+  const results = new Array(items.length);
+  let currentIndex = 0;
+  async function worker() {
+    while (currentIndex < items.length) {
+      const idx = currentIndex++;
+      const item = items[idx];
+      try {
+        const response = await judge(item.state, item.question, options);
+        results[idx] = { id: item.id, success: true, response };
+      } catch (err) {
+        results[idx] = {
+          id: item.id,
+          success: false,
+          error: err instanceof Error ? err.message : String(err)
+        };
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 // src/formatter.ts
@@ -1284,473 +1335,6 @@ function truncate(str, maxLen) {
   return s.length > maxLen ? `${s.slice(0, maxLen - 3)}...` : s;
 }
 
-// src/client.ts
-var RETRYABLE_STATUS_CODES2 = {
-  408: true,
-  409: true,
-  429: true,
-  500: true,
-  502: true,
-  503: true,
-  504: true
-};
-function sleep2(ms, signal) {
-  const { promise, resolve, reject } = Promise.withResolvers();
-  if (signal?.aborted) {
-    reject(new Error("Request aborted during retry wait"));
-    return promise;
-  }
-  const timer = setTimeout(() => resolve(), ms);
-  signal?.addEventListener("abort", () => {
-    clearTimeout(timer);
-    reject(new Error("Request aborted during retry wait"));
-  }, { once: true });
-  return promise;
-}
-async function rawJevJudgment2(state, questions, options = {}) {
-  const config = requireConfig({
-    protocol: options.protocol,
-    baseUrl: options.baseUrl,
-    apiKey: options.apiKey,
-    model: options.model,
-    timeoutMs: options.timeoutMs
-  });
-  const protocol = config.protocol;
-  const baseUrl = config.baseUrl;
-  const model = config.model;
-  const timeoutMs = config.timeoutMs;
-  const maxRetries = options.maxRetries ?? 2;
-  let targetUrl = baseUrl;
-  if (protocol === "chat-completions") {
-    if (!targetUrl.endsWith("/chat/completions")) {
-      targetUrl = `${targetUrl}/chat/completions`;
-    }
-  }
-  let userContent = "";
-  if (typeof state === "string" && state.trim().length > 0) {
-    userContent = state.trim();
-  } else if (state !== null && state !== undefined) {
-    userContent = typeof state === "object" ? JSON.stringify(state, null, 2) : String(state);
-  }
-  if (!userContent) {
-    const qList = Object.entries(questions).map(([k, q]) => `${k}: ${q.instructions}`).join(`
-`);
-    userContent = qList || "Evaluate the questions.";
-  }
-  const payload = {
-    model,
-    state,
-    questions,
-    messages: [
-      {
-        role: "user",
-        content: userContent
-      }
-    ]
-  };
-  const t0 = performance.now();
-  let lastError = null;
-  let attempt = 0;
-  while (attempt <= maxRetries) {
-    const controller = new AbortController;
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(targetUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => "");
-        const shouldRetry = attempt < maxRetries && Boolean(RETRYABLE_STATUS_CODES2[res.status]);
-        if (shouldRetry) {
-          attempt++;
-          const jitter = Math.random() * 100;
-          const delay = Math.min(2000, 200 * Math.pow(2, attempt) + jitter);
-          await sleep2(delay);
-          continue;
-        }
-        throw new Error(`Jev provider returned HTTP ${res.status} (${res.statusText}) at ${targetUrl}: ${errorText || "(empty body)"}`);
-      }
-      let rawJson;
-      try {
-        rawJson = await res.json();
-      } catch (parseErr) {
-        throw new Error(`Jev provider returned invalid JSON (HTTP ${res.status}): ${String(parseErr)}`);
-      }
-      const durationMs = Math.round(performance.now() - t0);
-      let parsedAnswers = null;
-      let returnedModel = model;
-      let usage;
-      if (rawJson.answers && typeof rawJson.answers === "object") {
-        parsedAnswers = rawJson.answers;
-        if (typeof rawJson.model === "string")
-          returnedModel = rawJson.model;
-        if (rawJson.usage && typeof rawJson.usage === "object") {
-          usage = rawJson.usage;
-        }
-      } else if (rawJson.choices && Array.isArray(rawJson.choices)) {
-        const choices = rawJson.choices;
-        const contentRaw = choices[0]?.message?.content;
-        if (!contentRaw) {
-          throw new Error(`Invalid OpenAI-compatible response: missing message.content in choices[0]. Raw: ${JSON.stringify(rawJson).slice(0, 300)}`);
-        }
-        let cleanContent = contentRaw.trim();
-        if (cleanContent.startsWith("```")) {
-          cleanContent = cleanContent.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```$/, "").trim();
-        }
-        try {
-          const parsed = JSON.parse(cleanContent);
-          parsedAnswers = parsed.answers || parsed;
-          if (parsed.model)
-            returnedModel = parsed.model;
-        } catch (err) {
-          throw new Error(`Failed to parse Jev JSON content: "${cleanContent.slice(0, 300)}" (${String(err)})`);
-        }
-        const rawUsage = rawJson.usage;
-        if (rawUsage) {
-          usage = rawUsage;
-        }
-      } else {
-        parsedAnswers = rawJson.answers || rawJson;
-        if (typeof rawJson.model === "string")
-          returnedModel = rawJson.model;
-      }
-      if (!parsedAnswers || typeof parsedAnswers !== "object") {
-        throw new Error(`Jev response missing 'answers' object. Endpoint: ${targetUrl}, Protocol: ${protocol}`);
-      }
-      for (const key of Object.keys(parsedAnswers)) {
-        const ans = parsedAnswers[key];
-        if (ans) {
-          if (ans.type === "noul") {
-            ans.bool = ans.noul;
-          }
-          if (typeof ans.answer_confidence === "number") {
-            ans.confidence = ans.answer_confidence;
-          }
-        }
-      }
-      return {
-        model: returnedModel,
-        answers: parsedAnswers,
-        usage,
-        durationMs
-      };
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        lastError = new Error(`Jev request timed out after ${timeoutMs}ms (endpoint: ${targetUrl}, key: ${redactApiKey(config.apiKey)})`);
-      } else {
-        const errStr = String(err);
-        if (errStr.includes("ECONNREFUSED") || errStr.includes("connection refused") || errStr.includes("connect ECONNREFUSED")) {
-          if (targetUrl.includes("20130") || model.toLowerCase().includes("laya")) {
-            lastError = new Error(`Laya local decision server is offline at ${targetUrl}. Start it with 'laya start' in your terminal or run D:\\Programming\\project\\laya-server\\start.bat`);
-          } else {
-            lastError = err instanceof Error ? err : new Error(errStr);
-          }
-        } else {
-          lastError = err instanceof Error ? err : new Error(errStr);
-        }
-      }
-      if (attempt < maxRetries) {
-        attempt++;
-        const jitter = Math.random() * 100;
-        const delay = Math.min(2000, 200 * Math.pow(2, attempt) + jitter);
-        await sleep2(delay);
-      } else {
-        break;
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw lastError || new Error(`Jev request failed after ${maxRetries + 1} attempts at ${targetUrl}`);
-}
-function normalizeQuestion2(input) {
-  if (typeof input === "string") {
-    return {
-      type: "noul",
-      instructions: input
-    };
-  }
-  if (typeof input === "object" && input !== null) {
-    const raw = input;
-    const type = typeof raw.type === "string" ? raw.type.toLowerCase() : undefined;
-    const instructions = String(raw.instructions || raw.text || raw.prompt || raw.question || raw.query || raw.statement || raw.claim || raw.title || raw.description || raw.desc || "").trim();
-    if (type === "choice") {
-      const rawOpts = raw.criteria ?? raw.options ?? raw.choices;
-      let criteria;
-      if (Array.isArray(rawOpts)) {
-        criteria = Object.fromEntries(rawOpts.map((k) => [String(k), String(k)]));
-      } else if (typeof rawOpts === "object" && rawOpts !== null) {
-        criteria = rawOpts;
-      } else {
-        criteria = { yes: "yes", no: "no" };
-      }
-      return {
-        type: "choice",
-        instructions: instructions || "Select the most appropriate option",
-        criteria
-      };
-    }
-    if (type === "score") {
-      const rawLevels = raw.criteria ?? raw.levels ?? raw.options ?? raw.scale ?? raw.choices;
-      let criteria;
-      if (Array.isArray(rawLevels)) {
-        criteria = rawLevels.map(String);
-      } else if (typeof rawLevels === "object" && rawLevels !== null) {
-        criteria = Object.values(rawLevels).map(String);
-      } else {
-        criteria = ["1", "2", "3", "4", "5"];
-      }
-      return {
-        type: "score",
-        instructions: instructions || "Rate the level",
-        criteria
-      };
-    }
-    const rawCrit = raw.criteria && typeof raw.criteria === "object" ? raw.criteria : undefined;
-    let noulCriteria = undefined;
-    if (rawCrit) {
-      if (rawCrit.true || rawCrit.false) {
-        noulCriteria = {
-          true: String(rawCrit.true || "true"),
-          false: String(rawCrit.false || "false")
-        };
-      } else if (rawCrit.yes || rawCrit.no) {
-        noulCriteria = {
-          true: String(rawCrit.yes || "yes"),
-          false: String(rawCrit.no || "no")
-        };
-      } else {
-        noulCriteria = rawCrit;
-      }
-    }
-    return {
-      type: "noul",
-      instructions: instructions || "Is this valid and true?",
-      ...noulCriteria ? { criteria: noulCriteria } : {}
-    };
-  }
-  return {
-    type: "noul",
-    instructions: String(input)
-  };
-}
-function normalizeQuestions2(input) {
-  if (typeof input === "string") {
-    return {
-      verdict: normalizeQuestion2(input)
-    };
-  }
-  if (Array.isArray(input)) {
-    return Object.fromEntries(input.map((q, idx) => [`q${idx + 1}`, normalizeQuestion2(q)]));
-  }
-  if (typeof input === "object" && input !== null) {
-    const raw = input;
-    const hasQuestionKey = typeof raw.instructions === "string" || typeof raw.text === "string" || typeof raw.prompt === "string" || typeof raw.question === "string" || typeof raw.query === "string" || typeof raw.statement === "string";
-    const hasType = typeof raw.type === "string" && ["noul", "bool", "boolean", "yes_no", "true_false", "choice", "score"].includes(raw.type.toLowerCase());
-    if (hasType || hasQuestionKey) {
-      return {
-        verdict: normalizeQuestion2(raw)
-      };
-    }
-    const result = {};
-    for (const [key, val] of Object.entries(input)) {
-      result[key] = normalizeQuestion2(val);
-    }
-    return result;
-  }
-  return {
-    verdict: {
-      type: "noul",
-      instructions: "Is this valid?"
-    }
-  };
-}
-async function judge2(state, questionInput, options = {}) {
-  const questions = normalizeQuestions2(questionInput);
-  const expandedQuestions = {};
-  const isLaya = options.model?.toLowerCase().includes("laya") || options.baseUrl && options.baseUrl.includes("20130");
-  if (isLaya) {
-    Object.assign(expandedQuestions, questions);
-  } else {
-    for (const [key, q] of Object.entries(questions)) {
-      expandedQuestions[key] = q;
-      if (q.type === "choice") {
-        const criteria = q.criteria || {};
-        for (const [optKey, optDesc] of Object.entries(criteria)) {
-          expandedQuestions[`opt_${key}_${optKey}`] = {
-            type: "noul",
-            instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
-            criteria: { true: optKey, false: `not ${optKey}` }
-          };
-        }
-      } else if (q.type === "score") {
-        const criteria = q.criteria || [];
-        for (let i = 0;i < criteria.length; i++) {
-          expandedQuestions[`lvl_${key}_${i}`] = {
-            type: "noul",
-            instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
-            criteria: { true: criteria[i], false: `not ${criteria[i]}` }
-          };
-        }
-      }
-    }
-  }
-  const result = await rawJevJudgment2(state, expandedQuestions, options);
-  const synthesizedAnswers = {};
-  const verdicts = {};
-  const probabilities = {};
-  for (const [key, q] of Object.entries(questions)) {
-    const directAns = result.answers[key];
-    if (q.type === "choice") {
-      if (directAns && directAns.type === "choice" && typeof directAns.choice === "string") {
-        synthesizedAnswers[key] = directAns;
-        verdicts[key] = directAns.choice;
-        probabilities[key] = directAns.confidence;
-      } else {
-        const criteriaKeys = Object.keys(q.criteria || {});
-        const scores = criteriaKeys.map((cKey) => ({
-          key: cKey,
-          p: result.answers[`opt_${key}_${cKey}`]?.noul ?? 0
-        }));
-        scores.sort((a, b) => b.p - a.p);
-        const best = scores[0] || { key: criteriaKeys[0] || "yes", p: 0.8 };
-        const sum = scores.reduce((acc, s) => acc + s.p, 0) || 1;
-        const choiceAns = {
-          type: "choice",
-          choice: best.key,
-          confidence: best.p,
-          probabilities: Object.fromEntries(scores.map((s) => [s.key, Math.round(s.p / sum * 100) / 100]))
-        };
-        synthesizedAnswers[key] = choiceAns;
-        verdicts[key] = best.key;
-        probabilities[key] = best.p;
-      }
-    } else if (q.type === "score") {
-      if (directAns && directAns.type === "score" && typeof directAns.score === "number") {
-        synthesizedAnswers[key] = directAns;
-        verdicts[key] = directAns.score;
-        probabilities[key] = directAns.confidence ?? 1;
-      } else {
-        const levels = q.criteria || [];
-        const scores = levels.map((lvl, idx) => ({
-          idx,
-          lvl,
-          p: result.answers[`lvl_${key}_${idx}`]?.noul ?? 0
-        }));
-        const sum = scores.reduce((acc, s) => acc + s.p, 0) || 1;
-        const expectedScore = scores.reduce((acc, s) => acc + s.idx * (s.p / sum), 0);
-        const maxProb = Math.max(...scores.map((s) => s.p), 0.7);
-        const scoreAns = {
-          type: "score",
-          score: Math.round(expectedScore * 100) / 100,
-          confidence: maxProb,
-          legend: Object.fromEntries(levels.map((lvl, idx) => [String(idx), lvl])),
-          probabilities: Object.fromEntries(scores.map((s) => [String(s.idx), Math.round(s.p / sum * 100) / 100]))
-        };
-        synthesizedAnswers[key] = scoreAns;
-        verdicts[key] = Math.round(expectedScore * 100) / 100;
-        probabilities[key] = maxProb;
-      }
-    } else {
-      const noulAns = directAns;
-      const p = noulAns?.noul ?? 0;
-      const isTrue = p >= (options.defaultThreshold ?? 0.5);
-      synthesizedAnswers[key] = {
-        type: "noul",
-        noul: p,
-        bool: p
-      };
-      verdicts[key] = isTrue;
-      probabilities[key] = p;
-    }
-  }
-  const originalKeys = Object.keys(questions);
-  const primaryKey = originalKeys[0];
-  const primaryAns = primaryKey ? synthesizedAnswers[primaryKey] : undefined;
-  let verdict = false;
-  let probability;
-  let confidence;
-  if (primaryKey && primaryAns) {
-    verdict = verdicts[primaryKey] ?? false;
-    if (primaryAns.type === "noul") {
-      probability = primaryAns.noul;
-    } else if (primaryAns.type === "choice") {
-      confidence = primaryAns.confidence;
-    } else if (primaryAns.type === "score") {
-      confidence = primaryAns.confidence;
-    }
-  }
-  return {
-    verdict,
-    probability,
-    confidence,
-    verdicts,
-    probabilities,
-    answers: synthesizedAnswers,
-    questions,
-    state,
-    raw: result
-  };
-}
-async function judgeBool(state, instructions, options = {}) {
-  const threshold = options.threshold ?? options.defaultThreshold ?? 0.5;
-  const res = await judge2(state, instructions, options);
-  return (res.probability ?? (res.verdict === true ? 1 : 0)) >= threshold;
-}
-async function judgeProbability(state, instructions, options = {}) {
-  const res = await judge2(state, instructions, options);
-  return res.probability ?? (res.verdict === true ? 1 : 0);
-}
-async function judgeChoice(state, instructions, options, clientOptions = {}) {
-  const res = await judge2(state, {
-    type: "choice",
-    instructions,
-    options
-  }, clientOptions);
-  return String(res.verdict);
-}
-async function judgeScore(state, instructions, levels, clientOptions = {}) {
-  const res = await judge2(state, {
-    type: "score",
-    instructions,
-    levels
-  }, clientOptions);
-  return Number(res.verdict);
-}
-async function judgeMulti(state, questionsMap, clientOptions = {}) {
-  return judge2(state, questionsMap, clientOptions);
-}
-async function judgeBatch(items, options = {}) {
-  const concurrency = Math.max(1, options.concurrency ?? 3);
-  const results = new Array(items.length);
-  let currentIndex = 0;
-  async function worker() {
-    while (currentIndex < items.length) {
-      const idx = currentIndex++;
-      const item = items[idx];
-      try {
-        const response = await judge2(item.state, item.question, options);
-        results[idx] = { id: item.id, success: true, response };
-      } catch (err) {
-        results[idx] = {
-          id: item.id,
-          success: false,
-          error: err instanceof Error ? err.message : String(err)
-        };
-      }
-    }
-  }
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
-}
-
 // src/tools/coding.ts
 var MAX_DOC_CHARS = 50000;
 var MAX_CLAIMS = 16;
@@ -1833,7 +1417,7 @@ ${testsTrunc.text}`;
       instructions: "Is this patch safe to apply and merge without breaking production?"
     }
   };
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const parseScore = (val, def) => {
     if (!val || typeof val !== "object")
@@ -1935,7 +1519,7 @@ ${item.text}`).join(`
   }
   const state = `EVIDENCE FOR COMPLETION CLAIMS:
 ${evidenceText}`;
-  const rawClaims = await rawJevJudgment2(state, claimQuestions, context?.options);
+  const rawClaims = await rawJevJudgment(state, claimQuestions, context?.options);
   const claimResults = [];
   let contradictedCount = 0;
   let allVerified = true;
@@ -2042,7 +1626,7 @@ ${input.context}` : "");
       criteria: { true: "destructive or risky", false: "safe" }
     }
   };
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const recAns = ans.recommendation;
   const riskAns = ans.risk;
@@ -2222,7 +1806,7 @@ ${evidenceText}`;
       criteria: SUBJECT_CRITERIA
     };
   }
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const claimResults = [];
   let verified = 0;
@@ -2324,7 +1908,7 @@ ${input.purpose}`;
       instructions: `Is this text relevant and substantively useful for the stated purpose: "${input.purpose}"?`
     };
   }
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const injectionProb = ans.injection?.noul ?? 0;
   const substanceProb = ans.substance?.noul ?? 1;
@@ -2429,7 +2013,7 @@ async function extractFields(input, context) {
   }
   const state = `DOCUMENT TO EXTRACT FROM:
 ${doc}`;
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   for (const f of fields) {
     if (results[f.id])
@@ -2504,7 +2088,7 @@ async function auditRecords(input, context) {
   }
   const state = `SOURCE DOCUMENT:
 ${source}`;
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const recordResults = [];
   let flagged = 0;
@@ -2680,7 +2264,7 @@ async function judgeNoul(input, context) {
   }
   const state = input.context ? `CONTEXT / EVIDENCE:
 ${truncate2(input.context, 1e5).text}` : "Evaluate based on general facts, logic, and knowledge.";
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const results = [];
   for (let i = 0;i < propositions.length; i++) {
@@ -2736,7 +2320,7 @@ var jevJudgeTool = {
     }
   },
   handler: async (args, context) => {
-    return judge2(args.state, args.question, context?.options);
+    return judge(args.state, args.question, context?.options);
   }
 };
 var jevJudgeBatchTool = {
@@ -2887,7 +2471,7 @@ ${candidateDescriptions}`;
       };
     }
   }
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const choiceAns = ans.selected_candidate;
   let selected = choiceAns?.choice;
@@ -2991,7 +2575,7 @@ ${candidateText}`;
       criteria: { true: "relevant", false: "irrelevant" }
     };
   }
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const existsProb = ans.exists?.noul ?? 0;
   const choiceAns = ans.best_candidate;
@@ -3056,7 +2640,7 @@ ${candidateText}`;
       criteria: { true: "relevant", false: "irrelevant" }
     };
   }
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const choiceAns = raw.answers.relevance;
   const choiceProbs = choiceAns?.probabilities ?? {};
   const ranked = candidateEntries.map((c) => ({
@@ -3109,7 +2693,7 @@ ${passageBTrunc}`;
       instructions: `Regarding aspect '${asp}', do Passage A and Passage B contradict each other?`
     };
   }
-  const raw = await rawJevJudgment2(state, questions, context?.options);
+  const raw = await rawJevJudgment(state, questions, context?.options);
   const ans = raw.answers;
   const overallAns = ans.overall_relation;
   let relation = "different_facts";
@@ -9481,422 +9065,6 @@ Using Laya Local CPU engine preset: ${baseUrl} (model: ${model})
   }
 }
 
-// src/tools/coding.ts
-var MAX_DOC_CHARS2 = 50000;
-var MAX_CLAIMS2 = 16;
-var MAX_CLAIM_CHARS2 = 2000;
-var MAX_EVIDENCE_CHARS2 = 200000;
-var REVIEW_WEIGHTS2 = {
-  correctness: 0.4,
-  spec_match: 0.3,
-  test_gap: 0.15,
-  blast_radius: 0.15
-};
-function truncate3(text, maxChars) {
-  if (text === null || text === undefined)
-    return { text: "", truncated: false };
-  const str = typeof text === "string" ? text : String(text);
-  if (str.length <= maxChars)
-    return { text: str, truncated: false };
-  return { text: `${str.slice(0, maxChars)} […truncated]`, truncated: true };
-}
-function reviewComposite2(scores) {
-  const clamp01 = (v) => Math.min(1, Math.max(0, v));
-  const clamp02 = (v) => Math.min(2, Math.max(0, v));
-  const correctness = clamp01(clamp02(scores.correctness) / 2);
-  const specMatch = clamp01(clamp02(scores.specMatch) / 2);
-  const tests = clamp01(1 - clamp02(scores.testGap) / 2);
-  const blast = clamp01(1 - clamp02(scores.blastRadius) / 2);
-  return REVIEW_WEIGHTS2.correctness * correctness + REVIEW_WEIGHTS2.spec_match * specMatch + REVIEW_WEIGHTS2.test_gap * tests + REVIEW_WEIGHTS2.blast_radius * blast;
-}
-function reviewAction2(input) {
-  if (input.minConfidence < input.reviewAt || input.safeToApply < input.reviewAt) {
-    return "escalate";
-  }
-  if (input.safeToApply >= input.autoAccept && input.composite >= input.compositeFloor && input.minConfidence >= input.autoAccept) {
-    return "auto";
-  }
-  return "review";
-}
-async function reviewDiff2(input, context) {
-  const diffTrunc = truncate3(input.diff, MAX_DOC_CHARS2);
-  const reqTrunc = truncate3(input.request, MAX_DOC_CHARS2);
-  const testsTrunc = input.tests ? truncate3(input.tests, MAX_DOC_CHARS2) : undefined;
-  const isTruncated = diffTrunc.truncated || reqTrunc.truncated || (testsTrunc?.truncated ?? false);
-  const autoAccept = input.auto_accept ?? 0.8;
-  const reviewAt = input.review_at ?? Math.min(0.5, autoAccept);
-  const compositeFloor = input.composite_floor ?? 0.7;
-  let state = `TASK REQUEST:
-${reqTrunc.text}
-
-PROPOSED DIFF / PATCH:
-${diffTrunc.text}`;
-  if (testsTrunc) {
-    state += `
-
-TEST RESULTS / VERIFICATION EVIDENCE:
-${testsTrunc.text}`;
-  }
-  const questions = {
-    correctness: {
-      type: "score",
-      instructions: "Rate the correctness and bug-freeness of this patch (0 = broken/buggy, 1 = plausible with issues, 2 = correct and complete).",
-      criteria: ["broken or buggy", "plausible with non-blocking issues", "correct and complete"]
-    },
-    spec_match: {
-      type: "score",
-      instructions: "Does this patch fulfill the task request? (0 = diverges, 1 = partial match, 2 = exact specification match).",
-      criteria: ["diverges from request", "partial match", "exact specification match"]
-    },
-    test_gap: {
-      type: "score",
-      instructions: "Assess test coverage or gap for critical paths (0 = well tested/safe or non-executable documentation/styling, 1 = partial tests, 2 = untested critical path). For non-code changes (documentation, markdown, comments), rate 0.",
-      criteria: ["well tested/safe or non-code docs", "partial test coverage", "untested critical path"]
-    },
-    blast_radius: {
-      type: "score",
-      instructions: "Assess regression risk or blast radius (0 = tight localized changes or non-code docs, 1 = moderate, 2 = wide unconstrained blast radius).",
-      criteria: ["tight localized changes or non-code docs", "moderate blast radius", "wide unconstrained blast radius"]
-    },
-    safe_to_apply: {
-      type: "noul",
-      instructions: "Is this patch safe to apply and merge without breaking production?"
-    }
-  };
-  const raw = await rawJevJudgment2(state, questions, context?.options);
-  const ans = raw.answers;
-  const parseScore = (val, def) => {
-    if (!val || typeof val !== "object")
-      return def;
-    const obj = val;
-    if (typeof obj.score === "number")
-      return obj.score;
-    if (typeof obj.noul === "number")
-      return Math.round(obj.noul * 2 * 100) / 100;
-    return def;
-  };
-  const correctness = parseScore(ans.correctness, 0);
-  const specMatch = parseScore(ans.spec_match, 0);
-  const testGap = parseScore(ans.test_gap, 2);
-  const blastRadius = parseScore(ans.blast_radius, 2);
-  const safeToApply = ans.safe_to_apply?.noul ?? 0;
-  const getConf = (ansObj, def = 0.8) => {
-    if (!ansObj || typeof ansObj !== "object")
-      return def;
-    const rec = ansObj;
-    if (typeof rec.answer_confidence === "number")
-      return rec.answer_confidence;
-    if (typeof rec.confidence === "number")
-      return rec.confidence;
-    if (typeof rec.noul === "number")
-      return rec.noul;
-    return def;
-  };
-  const minConf = Math.min(getConf(ans.correctness, 1), getConf(ans.spec_match, 1), getConf(ans.test_gap, 1), getConf(ans.blast_radius, 1));
-  const composite = reviewComposite2({
-    correctness,
-    specMatch,
-    testGap,
-    blastRadius
-  });
-  let action = reviewAction2({
-    composite,
-    safeToApply,
-    minConfidence: minConf,
-    autoAccept,
-    reviewAt,
-    compositeFloor
-  });
-  if (isTruncated && action === "auto") {
-    action = "review";
-  }
-  return {
-    scores: {
-      correctness,
-      spec_match: specMatch,
-      test_gap: testGap,
-      blast_radius: blastRadius
-    },
-    composite: Math.round(composite * 100) / 100,
-    safe_to_apply: safeToApply,
-    safe_to_apply_verdict: safeToApply >= autoAccept,
-    action,
-    truncated: isTruncated,
-    thresholds: {
-      auto_accept: autoAccept,
-      review_at: reviewAt,
-      composite_floor: compositeFloor
-    }
-  };
-}
-async function gatePatch2(input, context) {
-  const reviewRes = await reviewDiff2(input, context);
-  const claims = (input.claims || []).slice(0, MAX_CLAIMS2).map((c) => truncate3(c, MAX_CLAIM_CHARS2).text);
-  let evidenceText = "";
-  if (typeof input.evidence === "string") {
-    evidenceText = truncate3(input.evidence, MAX_EVIDENCE_CHARS2).text;
-  } else if (Array.isArray(input.evidence)) {
-    evidenceText = input.evidence.map((item, idx) => `[Evidence ${item.id ?? idx + 1}]:
-${item.text}`).join(`
-
-`);
-    evidenceText = truncate3(evidenceText, MAX_EVIDENCE_CHARS2).text;
-  }
-  if (claims.length === 0) {
-    return {
-      ...reviewRes,
-      claims: [],
-      all_claims_verified: true,
-      contradicted_count: 0
-    };
-  }
-  const claimQuestions = {};
-  for (let i = 0;i < claims.length; i++) {
-    claimQuestions[`supp_${i}`] = {
-      type: "noul",
-      instructions: `Does the evidence directly confirm and support this completion claim: "${claims[i]}"?`,
-      criteria: { true: "evidence confirms the claim", false: "evidence does not confirm or is silent" }
-    };
-    claimQuestions[`contra_${i}`] = {
-      type: "noul",
-      instructions: `Does the evidence contradict, disprove, or conflict with this completion claim: "${claims[i]}"?`,
-      criteria: { true: "evidence contradicts", false: "evidence does not contradict" }
-    };
-  }
-  const state = `EVIDENCE FOR COMPLETION CLAIMS:
-${evidenceText}`;
-  const rawClaims = await rawJevJudgment2(state, claimQuestions, context?.options);
-  const claimResults = [];
-  let contradictedCount = 0;
-  let allVerified = true;
-  const autoAccept = input.auto_accept ?? 0.8;
-  const reviewAt = input.review_at ?? Math.min(0.5, autoAccept);
-  for (let i = 0;i < claims.length; i++) {
-    const supp = rawClaims.answers[`supp_${i}`]?.noul ?? 0;
-    const contra = rawClaims.answers[`contra_${i}`]?.noul ?? 0;
-    const relChoice = rawClaims.answers[`claim_${i}`]?.choice;
-    let verdict = "unsupported";
-    let confidence = 0.5;
-    if (relChoice === "supports") {
-      verdict = "verified";
-      confidence = rawClaims.answers[`claim_${i}`]?.confidence ?? 0.85;
-    } else if (relChoice === "contradicts") {
-      verdict = "contradicted";
-      confidence = rawClaims.answers[`claim_${i}`]?.confidence ?? 0.85;
-    } else if (relChoice === "says_nothing") {
-      verdict = "unsupported";
-      confidence = 0.5;
-    } else {
-      if (supp >= 0.65 && contra < 0.4) {
-        verdict = "verified";
-        confidence = supp;
-      } else if (contra >= 0.6 && supp < 0.4) {
-        verdict = "contradicted";
-        confidence = contra;
-      } else {
-        verdict = "unsupported";
-        confidence = Math.max(0.5, 1 - Math.abs(supp - contra));
-      }
-    }
-    if (verdict === "contradicted") {
-      contradictedCount++;
-      allVerified = false;
-    } else if (verdict !== "verified") {
-      allVerified = false;
-    }
-    const action = confidence >= autoAccept && verdict === "verified" ? "auto" : "review";
-    claimResults.push({
-      claim: claims[i],
-      verdict,
-      probabilities: {
-        verified: supp,
-        contradicted: contra,
-        unsupported: Math.max(0, 1 - supp - contra)
-      },
-      confidence,
-      action
-    });
-  }
-  let finalAction = reviewRes.action;
-  if (contradictedCount > 0) {
-    finalAction = "escalate";
-  } else if (!allVerified && finalAction === "auto") {
-    finalAction = "review";
-  }
-  return {
-    ...reviewRes,
-    action: finalAction,
-    claims: claimResults,
-    all_claims_verified: allVerified,
-    contradicted_count: contradictedCount
-  };
-}
-async function screenAction2(input, context) {
-  const state = `Action an autonomous agent is about to execute:
-${input.action}` + (input.context ? `
-
-Task Context:
-${input.context}` : "");
-  const questions = {
-    risk: {
-      type: "score",
-      instructions: "How risky is it to run this action automatically? (0 = safe/read-only, 1 = low, 2 = needs review, 3 = high/destructive).",
-      criteria: [
-        "safe and read-only",
-        "low risk",
-        "needs human review",
-        "high risk — could destroy data, drop tables, or break production"
-      ]
-    },
-    touches_prod: {
-      type: "noul",
-      instructions: "Does this action touch production environments or delete/overwrite important data?"
-    },
-    recommendation: {
-      type: "choice",
-      instructions: "What should the harness do with this action?",
-      criteria: {
-        allow: "safe to run automatically without prompting",
-        confirm: "pause and ask human operator to confirm",
-        block: "block execution and require a safer alternative"
-      }
-    },
-    is_safe: {
-      type: "noul",
-      instructions: "Is this action completely safe, benign, and read-only?",
-      criteria: { true: "safe and benign", false: "risky or destructive" }
-    },
-    is_destructive: {
-      type: "noul",
-      instructions: "Is this action destructive, risky, or dangerous (could delete files, drop data, or alter state)?",
-      criteria: { true: "destructive or risky", false: "safe" }
-    }
-  };
-  const raw = await rawJevJudgment2(state, questions, context?.options);
-  const ans = raw.answers;
-  const recAns = ans.recommendation;
-  const riskAns = ans.risk;
-  const prodAns = ans.touches_prod;
-  let recommendation = "confirm";
-  const scoreRisk = riskAns?.score;
-  const isSafe = ans.is_safe?.noul;
-  const isDestructive = ans.is_destructive?.noul;
-  let rawRisk = 1.5;
-  if (typeof scoreRisk === "number") {
-    rawRisk = scoreRisk;
-  } else if (isSafe !== undefined && isDestructive !== undefined) {
-    rawRisk = isDestructive * 3 * (1 - isSafe * 0.5);
-  } else if (riskAns?.noul !== undefined) {
-    rawRisk = riskAns.noul * 3;
-  }
-  const risk_score = Math.round(rawRisk * 100) / 100;
-  const touches_prod = (prodAns?.noul ?? 0) >= 0.5;
-  const chosen = recAns?.choice;
-  if (risk_score >= 2.5 || touches_prod && risk_score >= 1.6 || chosen === "block") {
-    recommendation = "block";
-  } else if (risk_score >= 1.5 || touches_prod || chosen === "confirm") {
-    recommendation = "confirm";
-  } else {
-    recommendation = "allow";
-  }
-  return {
-    action: input.action,
-    recommendation,
-    confidence: recAns?.confidence ?? (recAns?.noul ?? 0.8),
-    risk_score,
-    touches_prod,
-    touches_prod_probability: prodAns?.noul ?? 0
-  };
-}
-var jevReviewTool2 = {
-  name: "jev_review",
-  aliases: ["jev_review_patch"],
-  description: `Score a proposed git diff / patch against the task request without confirmation bias, with optional Definition-of-Done claim verification.
-` + `USE WHEN: Reviewing code changes during implementation to evaluate correctness, specification conformance, test coverage gaps, and blast radius.
-` + `DO NOT USE WHEN: You have no code diff to review (use jev_verify for pure text claims, or jev_action_gate for shell commands).
-` + "RETURNS: Rubric scores (0..2), composite score (0..1), safe_to_apply probability, action (auto | review | escalate), and claim verdicts if claims are provided.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      diff: { type: "string", description: "The git diff or patch text to evaluate (or use 'patch')." },
-      patch: { type: "string", description: "Alias for diff." },
-      request: { type: "string", description: "The original task request or acceptance specification (or use 'task')." },
-      task: { type: "string", description: "Alias for request." },
-      tests: { type: "string", description: "Optional output log from executed tests." },
-      claims: {
-        description: "Optional completion claims to audit against evidence (runs full DoD acceptance gate if provided)."
-      },
-      claim: { type: "string", description: "Single completion claim to audit." },
-      evidence: {
-        type: "string",
-        description: "Optional test runner logs or execution output supporting the completion claims (or use 'context')."
-      },
-      context: { type: "string", description: "Alias for evidence." },
-      auto_accept: { type: "number", description: "Threshold for auto-approval (default: 0.8)." },
-      review_at: { type: "number", description: "Threshold below which to escalate to human (default: min(0.5, auto_accept))." },
-      composite_floor: { type: "number", description: "Minimum weighted composite score required for auto (default: 0.7)." }
-    }
-  },
-  handler: async (args, context) => {
-    const rawArgs = args;
-    if (Array.isArray(rawArgs.claims) && rawArgs.claims.length > 0 && rawArgs.evidence) {
-      return gatePatch2(args, context);
-    }
-    return reviewDiff2(args, context);
-  }
-};
-var jevGateTool2 = {
-  name: "jev_gate",
-  aliases: ["jev_gate_acceptance"],
-  description: `Final acceptance gate before declaring a task done: reviews patch diff AND audits developer completion claims against evidence logs.
-` + `USE WHEN: Calling a feature done, closing an issue, or finalizing a PR (Definition of Done) to eliminate fake-done claims.
-` + `DO NOT USE WHEN: Only inspecting an intermediate diff without test runner logs or completion claims (use jev_review).
-` + "RETURNS: Review scores and claim verdicts (verified | contradicted | unsupported). Strictly escalates if any claim is contradicted.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      diff: { type: "string", description: "The git diff or patch text to evaluate." },
-      request: { type: "string", description: "The original task request." },
-      claims: {
-        type: "array",
-        items: { type: "string" },
-        description: "List of completion claims to verify against evidence (e.g. ['all unit tests pass', 'no secrets committed'])."
-      },
-      evidence: {
-        type: "string",
-        description: "The evidence text or logs (e.g. terminal test runner output, curl response)."
-      },
-      tests: { type: "string", description: "Optional test log output." },
-      auto_accept: { type: "number", description: "Threshold for auto-approval (default: 0.8)." },
-      review_at: { type: "number", description: "Threshold for escalation (default: min(0.5, auto_accept))." },
-      composite_floor: { type: "number", description: "Minimum composite score (default: 0.7)." }
-    },
-    required: ["diff", "request", "claims", "evidence"]
-  },
-  handler: async (args, context) => {
-    return gatePatch2(args, context);
-  }
-};
-var jevActionGateTool2 = {
-  name: "jev_action_gate",
-  aliases: ["jev_screen_command", "jev_gate_command"],
-  description: `Pre-execution safety screening before running autonomous shell commands or file operations.
-` + `USE WHEN: About to execute a potentially destructive or state-changing action in the terminal (e.g. rm, drop, git reset --hard, curl, alter, overwrite).
-` + `DO NOT USE WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files) or for reviewing code diffs (use jev_review).
-` + "RETURNS: Risk score (0..3), touches_prod boolean, and recommendation (allow | confirm | block).",
-  inputSchema: {
-    type: "object",
-    properties: {
-      action: { type: "string", description: "The shell command or action about to run (or use 'command')." },
-      command: { type: "string", description: "Alias for action." },
-      context: { type: "string", description: "Optional context describing what the agent is attempting to accomplish." }
-    }
-  },
-  handler: async (args, context) => {
-    return screenAction2(args, context);
-  }
-};
-
 // src/cli.ts
 function printHelp() {
   console.log(`
@@ -10157,7 +9325,7 @@ async function main() {
       console.error("\x1B[31mError: Missing diff for review. Pipe via --stdin, pass as positional argument, or provide --file.\x1B[0m");
       process.exit(1);
     }
-    const res = await reviewDiff2({ diff, request: req }, { options: clientOptions });
+    const res = await reviewDiff({ diff, request: req }, { options: clientOptions });
     if (jsonOutput || rawOutput) {
       console.log(JSON.stringify(res, null, 2));
     } else if (quietOutput) {
@@ -10197,7 +9365,7 @@ async function main() {
       console.error("\x1B[31mError: Missing diff for gate. Pipe via --stdin, pass as positional argument, or provide --file.\x1B[0m");
       process.exit(1);
     }
-    const res = await gatePatch2({ diff, request: req, claims, evidence }, { options: clientOptions });
+    const res = await gatePatch({ diff, request: req, claims, evidence }, { options: clientOptions });
     if (jsonOutput || rawOutput) {
       console.log(JSON.stringify(res, null, 2));
     } else if (quietOutput) {
