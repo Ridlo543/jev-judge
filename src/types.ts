@@ -425,3 +425,62 @@ export interface JevNoulResult {
     auto_accept: number;
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SystemOne & Generic Universal Type Aliases
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SystemOneJudgeResult = JevJudgeResult;
+export type SystemOneClientOptions = JevClientOptions;
+export type SystemOneReviewInput = JevReviewInput;
+export type SystemOneReviewResult = JevReviewResult;
+export type SystemOneGateInput = JevGateInput;
+export type SystemOneGateResult = JevGateResult;
+export type SystemOneActionGateInput = JevActionGateInput;
+export type SystemOneActionGateResult = JevActionGateResult;
+export type SystemOneDecideInput = JevDecideInput;
+export type SystemOneDecideResult = JevDecideResult;
+export type SystemOneFindInput = JevFindInput;
+export type SystemOneFindResult = JevFindResult;
+export type SystemOneRerankInput = JevRerankInput;
+export type SystemOneRerankResult = JevRerankResult;
+export type SystemOneCompareInput = JevCompareInput;
+export type SystemOneCompareResult = JevCompareResult;
+export type SystemOneVerifyInput = JevVerifyInput;
+export type SystemOneVerifyResult = JevVerifyResult;
+export type SystemOneScreenInput = JevScreenInput;
+export type SystemOneScreenResult = JevScreenResult;
+export type SystemOneExtractField = JevExtractField;
+export type SystemOneExtractInput = JevExtractInput;
+export type SystemOneExtractResult = JevExtractResult;
+export type SystemOneAuditRecord = JevAuditRecord;
+export type SystemOneAuditInput = JevAuditInput;
+export type SystemOneAuditResult = JevAuditResult;
+export type SystemOneNoulInput = JevNoulInput;
+export type SystemOneNoulResult = JevNoulResult;
+
+// Short Clean Aliases
+export type ReviewInput = JevReviewInput;
+export type ReviewResult = JevReviewResult;
+export type GateInput = JevGateInput;
+export type GateResult = JevGateResult;
+export type ActionGateInput = JevActionGateInput;
+export type ActionGateResult = JevActionGateResult;
+export type DecideInput = JevDecideInput;
+export type DecideResult = JevDecideResult;
+export type FindInput = JevFindInput;
+export type FindResult = JevFindResult;
+export type RerankInput = JevRerankInput;
+export type RerankResult = JevRerankResult;
+export type CompareInput = JevCompareInput;
+export type CompareResult = JevCompareResult;
+export type VerifyInput = JevVerifyInput;
+export type VerifyResult = JevVerifyResult;
+export type ScreenInput = JevScreenInput;
+export type ScreenResult = JevScreenResult;
+export type ExtractInput = JevExtractInput;
+export type ExtractResult = JevExtractResult;
+export type AuditInput = JevAuditInput;
+export type AuditResult = JevAuditResult;
+export type NoulInput = JevNoulInput;
+export type NoulResult = JevNoulResult;

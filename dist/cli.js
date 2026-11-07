@@ -595,6 +595,8 @@ async function judgeBatch(items, options = {}) {
   await Promise.all(workers);
   return results;
 }
+var rawSystemOneJudgment = rawJevJudgment;
+var rawJudgment = rawJevJudgment;
 
 // src/formatter.ts
 function visualWidth(str) {

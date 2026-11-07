@@ -7,7 +7,7 @@ import {
 } from "../src/tools/research";
 
 const hasCredentials = Boolean(
-  process.env.JEV_API_KEY || process.env.OPENAI_API_KEY
+  process.env.SYSTEMONE_API_KEY || process.env.JEV_API_KEY || process.env.OPENAI_API_KEY
 );
 const itLive = it.skipIf(!hasCredentials);
 

@@ -589,6 +589,8 @@ async function judgeBatch(items, options = {}) {
   await Promise.all(workers);
   return results;
 }
+var rawSystemOneJudgment = rawJevJudgment;
+var rawJudgment = rawJevJudgment;
 // src/tools/coding.ts
 var MAX_DOC_CHARS = 50000;
 var MAX_CLAIMS = 16;
@@ -2224,6 +2226,8 @@ export {
   normalizeQuestions,
   primitiveTools,
   rawJevJudgment,
+  rawJudgment,
+  rawSystemOneJudgment,
   redactApiKey,
   requireConfig,
   rerankCandidates,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { gatePatch, reviewDiff, screenAction } from "../src/tools/coding";
 
 const hasCredentials = Boolean(
-  process.env.JEV_API_KEY || process.env.OPENAI_API_KEY
+  process.env.SYSTEMONE_API_KEY || process.env.JEV_API_KEY || process.env.OPENAI_API_KEY
 );
 const itLive = it.skipIf(!hasCredentials);
 

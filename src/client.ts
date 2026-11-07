@@ -700,3 +700,6 @@ export async function judgeBatch(
   await Promise.all(workers);
   return results;
 }
+
+export const rawSystemOneJudgment = rawJevJudgment;
+export const rawJudgment = rawJevJudgment;
