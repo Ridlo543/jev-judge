@@ -53,12 +53,21 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
       client = "workspace";
     }
 
+    let isGlobal = Boolean(options.global);
+    if (isInteractive && client !== "workspace" && client !== "config" && !options.global) {
+      console.log(`\nSelect configuration scope for ${client.toUpperCase()}:`);
+      console.log("  [1] Global / User-wide (recommended: available across all your projects)");
+      console.log("  [2] Local Workspace (stored in current directory)\n");
+      const scopeChoice = await ask("Choose scope (1-2) [1]: ", "1");
+      isGlobal = scopeChoice !== "2";
+    }
+
     // 2. Select Decision Engine
     let engineChoice = "1";
     if (isInteractive && !options.baseUrl && !options.model) {
-      console.log("Select decision engine preset:");
-      console.log("  [1] Cloud / Router (OpenAI-compatible endpoint, proxy, or official)");
-      console.log("  [2] Laya Local CPU Server (100% offline, http://127.0.0.1:20130)\n");
+      console.log("\nSelect decision engine preset:");
+      console.log("  [1] Cloud / Router (OpenAI-compatible endpoint, OpenRouter, or custom proxy)");
+      console.log("  [2] Laya Local CPU Server (100% offline, free, no API key needed, port 20130)\n");
       engineChoice = await ask("Choose engine (1-2) [1]: ", "1");
     }
 
@@ -70,34 +79,42 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
       baseUrl = (baseUrl || "http://127.0.0.1:20130/v1").trim().replace(/\/+$/, "");
       apiKey = (apiKey || "none").trim();
       model = (model || "laya").trim();
-      console.log(`\nUsing Laya Local CPU engine preset: ${baseUrl} (model: ${model})\n`);
+      console.log(`\nUsing Laya Local CPU engine preset: ${baseUrl} (model: ${model})`);
+
+      try {
+        const probe = await fetch("http://127.0.0.1:20130/health", { signal: AbortSignal.timeout(1000) });
+        if (probe.ok) {
+          console.log("\x1b[32m✔ Local Laya server detected and responding on port 20130!\x1b[0m\n");
+        }
+      } catch {
+        console.log("\x1b[33mℹ Local Laya server is currently offline.\x1b[0m");
+        console.log("  You can start it anytime with 'laya start' or 'node server.mjs' in your laya folder.\n");
+      }
     } else {
+      console.log("\n--- Cloud / Router Configuration ---");
+      console.log("Enter your OpenAI-compatible router or proxy endpoint details.\n");
+
       if (!baseUrl && isInteractive) {
         baseUrl = await ask(
-          "Enter Base URL (e.g. https://api.openai.com/v1, OpenRouter, or your proxy): ",
+          "Enter Base URL (e.g. https://api.openai.com/v1, OpenRouter, or your proxy) [https://api.openai.com/v1]: ",
+          "https://api.openai.com/v1",
         );
       }
-      if (!baseUrl) {
-        throw new Error("Base URL is required. Provide --base-url or enter one in the wizard.");
-      }
-      baseUrl = baseUrl.trim().replace(/\/+$/, "");
+      baseUrl = (baseUrl || "https://api.openai.com/v1").trim().replace(/\/+$/, "");
 
       if (!apiKey && isInteractive) {
-        apiKey = await ask("Enter API Key (will be saved in your local client config): ");
+        apiKey = await ask(
+          "Enter API Key (press Enter for 'none' if using a local/free router): ",
+          "none",
+        );
       }
-      if (!apiKey) {
-        throw new Error("API Key is required. Provide --api-key or enter one in the wizard.");
-      }
-      apiKey = apiKey.trim();
+      apiKey = (apiKey || "none").trim();
 
       if (!model && isInteractive) {
         const defaultModel = "systemone";
         model = await ask(`Enter Model ID [${defaultModel}]: `, defaultModel);
       }
-      if (!model) {
-        model = "systemone";
-      }
-      model = model.trim();
+      model = (model || "systemone").trim();
     }
     // 5. Execution Command
     const localExe = fs.existsSync(path.resolve(process.cwd(), "systemone-mcp.exe"))
@@ -110,7 +127,6 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
 
     // 6. Write Configuration
     let targetPath = "";
-    const isGlobal = Boolean(options.global);
 
     if (client === "config") {
       targetPath = path.resolve(process.cwd(), "systemone.config.json");
@@ -119,23 +135,28 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
         baseUrl,
         apiKey,
         model,
-        timeoutMs: 20000,
+        timeoutMs: 35000,
         defaultThreshold: 0.5,
       };
       fs.writeFileSync(targetPath, JSON.stringify(configData, null, 2) + "\n");
     } else {
-      if (client === "claude" && isGlobal) {
-        targetPath = path.resolve(os.homedir(), ".claude.json");
+      if (client === "claude") {
+        targetPath = isGlobal
+          ? path.resolve(os.homedir(), ".claude.json")
+          : path.resolve(process.cwd(), ".mcp.json");
       } else if (client === "omp") {
-        const dir = isGlobal ? path.resolve(os.homedir(), ".omp") : path.resolve(process.cwd(), ".omp");
+        const dir = isGlobal
+          ? path.resolve(os.homedir(), ".omp", "agent")
+          : path.resolve(process.cwd(), ".omp");
         fs.mkdirSync(dir, { recursive: true });
         targetPath = path.resolve(dir, "mcp.json");
       } else if (client === "cursor") {
-        const dir = path.resolve(process.cwd(), ".cursor");
+        const dir = isGlobal
+          ? path.resolve(os.homedir(), ".cursor")
+          : path.resolve(process.cwd(), ".cursor");
         fs.mkdirSync(dir, { recursive: true });
         targetPath = path.resolve(dir, "mcp.json");
       } else {
-        // workspace or default claude local
         targetPath = path.resolve(process.cwd(), ".mcp.json");
       }
 
@@ -165,11 +186,13 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
 
     console.log(`\n\x1b[32m✔ Success! SystemOne MCP configuration written to:\x1b[0m`);
     console.log(`  \x1b[1m${targetPath}\x1b[0m\n`);
-    console.log(`Agent Platform: \x1b[36m${client.toUpperCase()}\x1b[0m`);
+    console.log(`Agent Platform: \x1b[36m${client.toUpperCase()} (${isGlobal ? "Global" : "Workspace"})\x1b[0m`);
     console.log(`Endpoint:       \x1b[36m${baseUrl}\x1b[0m`);
     console.log(`Model:          \x1b[36m${model}\x1b[0m`);
-    console.log(`API Key:        \x1b[36m${apiKey.slice(0, 4)}...${apiKey.slice(-4)}\x1b[0m\n`);
+    const displayKey = apiKey === "none" ? "none" : `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
+    console.log(`API Key:        \x1b[36m${displayKey}\x1b[0m\n`);
     console.log("Your agent is ready to call SystemOne decision tools immediately!\n");
+    return;
   } finally {
     rl?.close();
   }
