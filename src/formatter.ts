@@ -525,7 +525,7 @@ function formatJudgeResult(res: any, format: OutputFormat = "markdown"): string 
 
   return renderCard({
     icon: "⚖️",
-    title: "Jev Judgment",
+    title: "System One Judgment",
     badge: `${badge} ${probText}`.trim(),
     table,
     details: details.length > 0 ? details : undefined,
@@ -545,7 +545,7 @@ function formatBatchJudgeResult(res: any): string {
 
   return renderCard({
     icon: "⚖️",
-    title: "Jev Batch Judgment",
+    title: "System One Batch Judgment",
     badge: `${successful}/${total} Succeeded`,
     table: {
       columns: [
@@ -574,7 +574,7 @@ function formatNoulResult(res: any): string {
 
   return renderCard({
     icon: "🎲",
-    title: "Jev Probability Calibration",
+    title: "System One Calibration",
     badge: `${results.length} Proposition(s)`,
     table: {
       columns: [

@@ -80,12 +80,12 @@ describe("Universal Output Formatter", () => {
     };
 
     const mdCompact = formatToolResult("jev_judge", data, "markdown");
-    expect(mdCompact).toContain("### ⚖️ Jev Judgment: ✅ [TRUE]");
+    expect(mdCompact).toContain("### ⚖️ System One Judgment: ✅ [TRUE]");
     expect(mdCompact).toContain("| Question / Metric           |       Verdict        | Conf / Score | Meaning / Level         |");
     expect(mdCompact).not.toContain("#### Detailed Breakdown & Semantic Criteria");
 
     const mdVerbose = formatToolResult("jev_judge", data, "markdown-verbose");
-    expect(mdVerbose).toContain("### ⚖️ Jev Judgment: ✅ [TRUE]");
+    expect(mdVerbose).toContain("### ⚖️ System One Judgment: ✅ [TRUE]");
     expect(mdVerbose).toContain("#### Detailed Breakdown & Semantic Criteria");
     expect(mdVerbose).toContain("**85.0%** 🏆 (Winner)");
     expect(mdVerbose).toContain("Scale Legend: `0: fragile → 1: viable → 2: production-grade → 3: benchmark`");

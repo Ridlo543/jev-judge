@@ -172,7 +172,7 @@ export const decideSchema = z
     _meta: z.unknown().optional(),
   })
   .transform((data) => ({
-    decision: data.decision ?? data.question ?? data.prompt ?? "",
+    decision: (data.decision ?? data.question ?? data.prompt ?? data.priorities ?? "Select the best candidate satisfying the given constraints.").trim(),
     candidates: data.candidates,
     evidence: data.evidence ?? data.context ?? "(No explicit evidence provided)",
     priorities: data.priorities ?? "(Satisfy technical requirements and best practices)",

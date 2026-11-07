@@ -503,7 +503,7 @@ function formatJudgeResult(res, format = "markdown") {
   }
   return renderCard({
     icon: "⚖️",
-    title: "Jev Judgment",
+    title: "System One Judgment",
     badge: `${badge} ${probText}`.trim(),
     table,
     details: details.length > 0 ? details : undefined,
@@ -521,7 +521,7 @@ function formatBatchJudgeResult(res) {
   const successful = res.filter((item) => item.success).length;
   return renderCard({
     icon: "⚖️",
-    title: "Jev Batch Judgment",
+    title: "System One Batch Judgment",
     badge: `${successful}/${total} Succeeded`,
     table: {
       columns: [
@@ -548,7 +548,7 @@ function formatNoulResult(res) {
   const results = Array.isArray(res?.results) ? res.results : [];
   return renderCard({
     icon: "\uD83C\uDFB2",
-    title: "Jev Probability Calibration",
+    title: "System One Calibration",
     badge: `${results.length} Proposition(s)`,
     table: {
       columns: [
@@ -8481,7 +8481,7 @@ var decideSchema = object({
   escape_hatches: boolean2().optional(),
   _meta: unknown().optional()
 }).transform((data) => ({
-  decision: data.decision ?? data.question ?? data.prompt ?? "",
+  decision: (data.decision ?? data.question ?? data.prompt ?? data.priorities ?? "Select the best candidate satisfying the given constraints.").trim(),
   candidates: data.candidates,
   evidence: data.evidence ?? data.context ?? "(No explicit evidence provided)",
   priorities: data.priorities ?? "(Satisfy technical requirements and best practices)",
