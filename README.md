@@ -43,7 +43,7 @@ irm https://raw.githubusercontent.com/Ridlo543/jev-judge/main/install.ps1 | iex
 
 ## 🧠 Supported Engines: Jev & Laya
 
-`jev-judge` supports two decision engines depending on your latency, privacy, and context length requirements:
+`systemone` supports two decision engines depending on your latency, privacy, and context length requirements:
 
 | Engine | Execution Environment | Context Window | Typical Latency | Cost / Auth | Best Used For |
 |---|---|---|---|---|---|
@@ -51,13 +51,13 @@ irm https://raw.githubusercontent.com/Ridlo543/jev-judge/main/install.ps1 | iex
 | **Laya** | **Local CPU** (via ONNX Runtime) | 512 tokens | **~300ms** | **100% Free & Offline** | Command safety gates, fast triage, assertion checks, offline workflows |
 
 ### Running with Laya (Local CPU)
-When running locally with Laya, simply pass `--laya` or set `JEV_MODEL=laya`:
+When running locally with Laya, simply pass `--laya` or set `SYSTEMONE_MODEL=laya`:
 ```bash
 # Boolean assertion on local CPU (300ms, offline)
-jev "1 + 1 = 2" "Is 1+1 equal to 2?" --laya
+s1 "1 + 1 = 2" "Is 1+1 equal to 2?" --laya
 
 # Screen command before executing
-jev "rm -rf /var/log/*" "Is this safe to run automatically?" --laya
+s1 "rm -rf /var/log/*" "Is this safe to run automatically?" --laya
 ```
 *Note: If using Laya locally, start the local runner with `laya start` (or `node server.mjs` on port `20130`).*
 
@@ -105,14 +105,14 @@ jev "rm -rf /var/log/*" "Is this safe to run automatically?" --laya
 ```json
 {
   "mcpServers": {
-    "jev": {
+    "systemone": {
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "-p", "systemone-judge", "systemone-mcp"],
       "env": {
-        "JEV_BASE_URL": "https://api.openai.com/v1",
-        "JEV_MODEL": "jev-latest",
-        "JEV_API_KEY": "${JEV_API_KEY}"
+        "SYSTEMONE_BASE_URL": "https://api.openai.com/v1",
+        "SYSTEMONE_MODEL": "systemone",
+        "SYSTEMONE_API_KEY": "${API_KEY}"
       }
     }
   }
@@ -123,22 +123,22 @@ jev "rm -rf /var/log/*" "Is this safe to run automatically?" --laya
 
 ## 💻 CLI Usage & Deterministic Contracts
 
-`jev` enforces strict input contracts: **files are strictly read from disk, inline strings are never mistaken for files, and `-` reads from standard input**.
+`systemone` (or short alias `s1`) enforces strict input contracts: **files are strictly read from disk, inline strings are never mistaken for files, and `-` reads from standard input**.
 
-### 1. Code Review (`jev review`)
+### 1. Code Review (`s1 review`)
 Evaluates patch correctness, specification alignment, test coverage gaps, and blast radius:
 ```bash
 # From file:
-jev review -f path/to/changes.patch --request "Fix division by zero in math module"
+s1 review -f path/to/changes.patch --request "Fix division by zero in math module"
 
 # Piped from git:
-git diff | jev review - --request "Refactor auth middleware to JWT"
+git diff | s1 review - --request "Refactor auth middleware to JWT"
 ```
 
-### 2. Definition-of-Done Acceptance Gating (`jev gate`)
+### 2. Definition-of-Done Acceptance Gating (`s1 gate`)
 Verifies diff quality and audits completion claims against test output to prevent fake completion:
 ```bash
-git diff | jev gate - \
+git diff | s1 gate - \
   --request "Add connection pooling" \
   --evidence-file test-results.log \
   --claim "Unit tests pass with 100% coverage" \
@@ -148,12 +148,12 @@ git diff | jev gate - \
 ### 3. Action Safety Screening
 Evaluates command risk with defense-in-depth enforcement:
 ```bash
-jev "rm -rf / --no-preserve-root" "Is this command destructive?" --laya
+s1 "rm -rf / --no-preserve-root" "Is this command destructive?" --laya
 ```
 
 ### 4. Categorical Classification
 ```bash
-jev -s "PostgreSQL connection pool exhausted" -c "network,database,client"
+s1 -s "PostgreSQL connection pool exhausted" -c "network,database,client"
 ```
 
 ---

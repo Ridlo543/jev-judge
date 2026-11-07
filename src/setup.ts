@@ -41,7 +41,7 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
       console.log("  [2] Oh My Pi (OMP) (creates .omp/mcp.json)");
       console.log("  [3] Cursor / Windsurf / Cline (creates .cursor/mcp.json)");
       console.log("  [4] Current Workspace (.mcp.json in current directory)");
-      console.log("  [5] Standalone Config (jev.config.json)\n");
+      console.log("  [5] Standalone Config (systemone.config.json)\n");
 
       const choice = await ask("Choose option (1-5) [1]: ", "1");
       if (choice === "2") client = "omp";
@@ -57,7 +57,7 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
     let engineChoice = "1";
     if (isInteractive && !options.baseUrl && !options.model) {
       console.log("Select decision engine preset:");
-      console.log("  [1] Jev Cloud / Router (OpenAI-compatible endpoint, proxy, or official)");
+      console.log("  [1] Cloud / Router (OpenAI-compatible endpoint, proxy, or official)");
       console.log("  [2] Laya Local CPU Server (100% offline, http://127.0.0.1:20130)\n");
       engineChoice = await ask("Choose engine (1-2) [1]: ", "1");
     }
@@ -91,24 +91,29 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
       apiKey = apiKey.trim();
 
       if (!model && isInteractive) {
-        const defaultModel = "jev-latest";
+        const defaultModel = "systemone";
         model = await ask(`Enter Model ID [${defaultModel}]: `, defaultModel);
       }
       if (!model) {
-        model = "jev-latest";
+        model = "systemone";
       }
       model = model.trim();
     }
     // 5. Execution Command
-    const execCommand = options.command || (fs.existsSync(path.resolve(process.cwd(), "jev-mcp.exe")) ? path.resolve(process.cwd(), "jev-mcp.exe") : "npx");
-    const execArgs = execCommand === "npx" ? ["-y", "jev-judge", "mcp"] : undefined;
+    const localExe = fs.existsSync(path.resolve(process.cwd(), "systemone-mcp.exe"))
+      ? path.resolve(process.cwd(), "systemone-mcp.exe")
+      : fs.existsSync(path.resolve(process.cwd(), "jev-mcp.exe"))
+        ? path.resolve(process.cwd(), "jev-mcp.exe")
+        : "npx";
+    const execCommand = options.command || localExe;
+    const execArgs = execCommand === "npx" ? ["-y", "-p", "systemone-judge", "systemone-mcp"] : undefined;
 
     // 6. Write Configuration
     let targetPath = "";
     const isGlobal = Boolean(options.global);
 
     if (client === "config") {
-      targetPath = path.resolve(process.cwd(), "jev.config.json");
+      targetPath = path.resolve(process.cwd(), "systemone.config.json");
       const configData = {
         protocol: "chat-completions",
         baseUrl,
@@ -144,13 +149,13 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
       }
 
       const mcpServers = (existingConfig.mcpServers as Record<string, unknown>) || {};
-      mcpServers.jev = {
+      mcpServers.systemone = {
         command: execCommand,
         ...(execArgs ? { args: execArgs } : {}),
         env: {
-          JEV_BASE_URL: baseUrl,
-          JEV_API_KEY: apiKey,
-          JEV_MODEL: model,
+          SYSTEMONE_BASE_URL: baseUrl,
+          SYSTEMONE_API_KEY: apiKey,
+          SYSTEMONE_MODEL: model,
         },
       };
       existingConfig.mcpServers = mcpServers;

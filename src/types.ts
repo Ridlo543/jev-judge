@@ -150,7 +150,7 @@ export interface JevClientOptions {
   baseUrl?: string;
   /** API key */
   apiKey?: string;
-  /** Model ID (defaults to opencode-free/jev-1.13-free or jev-latest) */
+  /** Model ID (e.g. systemone, laya, or custom model) */
   model?: string;
   /** Request timeout in milliseconds */
   timeoutMs?: number;

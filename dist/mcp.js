@@ -2414,7 +2414,7 @@ var ASPECT_RELATIONS = {
 async function decideChoice(input, context) {
   const candidates = (input.candidates || []).slice(0, MAX_CANDIDATES_DECIDE);
   if (candidates.length < 2) {
-    throw new Error("jev_decide requires at least 2 candidates to choose from.");
+    throw new Error("systemone_decide requires at least 2 candidates to choose from.");
   }
   const decisionTrunc = truncate2(input.decision, MAX_DECISION_CHARS).text;
   const evidenceTrunc = truncate2(input.evidence, MAX_EVIDENCE_DECIDE_CHARS).text;

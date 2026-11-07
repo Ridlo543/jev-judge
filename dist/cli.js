@@ -2417,7 +2417,7 @@ var ASPECT_RELATIONS = {
 async function decideChoice(input, context) {
   const candidates = (input.candidates || []).slice(0, MAX_CANDIDATES_DECIDE);
   if (candidates.length < 2) {
-    throw new Error("jev_decide requires at least 2 candidates to choose from.");
+    throw new Error("systemone_decide requires at least 2 candidates to choose from.");
   }
   const decisionTrunc = truncate2(input.decision, MAX_DECISION_CHARS).text;
   const evidenceTrunc = truncate2(input.evidence, MAX_EVIDENCE_DECIDE_CHARS).text;
@@ -8940,7 +8940,7 @@ async function runSetupWizard(options = {}) {
       console.log("  [2] Oh My Pi (OMP) (creates .omp/mcp.json)");
       console.log("  [3] Cursor / Windsurf / Cline (creates .cursor/mcp.json)");
       console.log("  [4] Current Workspace (.mcp.json in current directory)");
-      console.log(`  [5] Standalone Config (jev.config.json)
+      console.log(`  [5] Standalone Config (systemone.config.json)
 `);
       const choice = await ask("Choose option (1-5) [1]: ", "1");
       if (choice === "2")
@@ -8959,7 +8959,7 @@ async function runSetupWizard(options = {}) {
     let engineChoice = "1";
     if (isInteractive && !options.baseUrl && !options.model) {
       console.log("Select decision engine preset:");
-      console.log("  [1] Jev Cloud / Router (OpenAI-compatible endpoint, proxy, or official)");
+      console.log("  [1] Cloud / Router (OpenAI-compatible endpoint, proxy, or official)");
       console.log(`  [2] Laya Local CPU Server (100% offline, http://127.0.0.1:20130)
 `);
       engineChoice = await ask("Choose engine (1-2) [1]: ", "1");
@@ -8990,20 +8990,21 @@ Using Laya Local CPU engine preset: ${baseUrl} (model: ${model})
       }
       apiKey = apiKey.trim();
       if (!model && isInteractive) {
-        const defaultModel = "jev-latest";
+        const defaultModel = "systemone";
         model = await ask(`Enter Model ID [${defaultModel}]: `, defaultModel);
       }
       if (!model) {
-        model = "jev-latest";
+        model = "systemone";
       }
       model = model.trim();
     }
-    const execCommand = options.command || (fs2.existsSync(path2.resolve(process.cwd(), "jev-mcp.exe")) ? path2.resolve(process.cwd(), "jev-mcp.exe") : "npx");
-    const execArgs = execCommand === "npx" ? ["-y", "jev-judge", "mcp"] : undefined;
+    const localExe = fs2.existsSync(path2.resolve(process.cwd(), "systemone-mcp.exe")) ? path2.resolve(process.cwd(), "systemone-mcp.exe") : fs2.existsSync(path2.resolve(process.cwd(), "jev-mcp.exe")) ? path2.resolve(process.cwd(), "jev-mcp.exe") : "npx";
+    const execCommand = options.command || localExe;
+    const execArgs = execCommand === "npx" ? ["-y", "-p", "systemone-judge", "systemone-mcp"] : undefined;
     let targetPath = "";
     const isGlobal = Boolean(options.global);
     if (client === "config") {
-      targetPath = path2.resolve(process.cwd(), "jev.config.json");
+      targetPath = path2.resolve(process.cwd(), "systemone.config.json");
       const configData = {
         protocol: "chat-completions",
         baseUrl,
@@ -9037,13 +9038,13 @@ Using Laya Local CPU engine preset: ${baseUrl} (model: ${model})
         }
       }
       const mcpServers = existingConfig.mcpServers || {};
-      mcpServers.jev = {
+      mcpServers.systemone = {
         command: execCommand,
         ...execArgs ? { args: execArgs } : {},
         env: {
-          JEV_BASE_URL: baseUrl,
-          JEV_API_KEY: apiKey,
-          JEV_MODEL: model
+          SYSTEMONE_BASE_URL: baseUrl,
+          SYSTEMONE_API_KEY: apiKey,
+          SYSTEMONE_MODEL: model
         }
       };
       existingConfig.mcpServers = mcpServers;
@@ -9105,23 +9106,23 @@ Fast, calibrated decision model runner (Laya, Jev, and OpenAI-Compatible) for co
   --threshold <float>        Probability threshold (default: 0.5). Exits 0 if >=, 1 if <
   --stdin                    Read state or diff from standard input
   --protocol <name>          Protocol: chat-completions (default) or typesafe-direct
-  --model <name>             Model ID (defaults to JEV_MODEL or OPENAI_MODEL)
-  --base-url <url>           Endpoint URL (defaults to JEV_BASE_URL or OPENAI_BASE_URL)
-  --api-key <key>            API key (defaults to JEV_API_KEY or OPENAI_API_KEY)
+  --model <name>             Model ID (defaults to SYSTEMONE_MODEL or JEV_MODEL)
+  --base-url <url>           Endpoint URL (defaults to SYSTEMONE_BASE_URL or JEV_BASE_URL)
+  --api-key <key>            API key (defaults to SYSTEMONE_API_KEY or JEV_API_KEY)
   -h, --help                 Show this help message
 
 \x1B[1mEXAMPLES:\x1B[0m
   # Quick check (exit code 0 if yes, 1 if no):
-  jev "rm -rf /var/log/*" "Is this safe to run automatically?" --threshold 0.5
+  systemone "rm -rf /var/log/*" "Is this safe to run automatically?" --threshold 0.5
 
   # Pipe git diff for patch review:
-  git diff | jev review --stdin --request "Refactor auth middleware"
+  git diff | systemone review --request "Refactor auth middleware"
 
   # Acceptance gate before committing:
-  git diff | jev gate --stdin --request "Fix race condition" --evidence test.log --claim "unit tests pass"
+  git diff | systemone gate --request "Fix race condition" --evidence-file test.log --claim "unit tests pass"
 
   # Multi-choice categorization:
-  jev -s "PostgreSQL connection timeout" -c "network,database,client"
+  systemone -s "PostgreSQL connection pool exhausted" -c "network,database,client"
 `);
 }
 async function readStdin() {
