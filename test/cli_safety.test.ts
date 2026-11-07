@@ -3,6 +3,15 @@ import { screenAction, truncate } from "../src/tools/coding";
 import { decideChoice } from "../src/tools/research";
 import { resolveConfig } from "../src/config";
 
+let hasLaya = false;
+try {
+  const probe = await fetch("http://127.0.0.1:20130/health", { signal: AbortSignal.timeout(500) });
+  hasLaya = probe.ok;
+} catch {
+  hasLaya = false;
+}
+const itLaya = it.skipIf(!hasLaya);
+
 describe("CLI argument and file path safety (resolving Issue #1)", () => {
   it("fails immediately when --diff points to a non-existent file", async () => {
     const proc = Bun.spawn(["bun", "src/cli.ts", "review", "--diff", "nonexistent_patch_file.patch"], {
@@ -102,7 +111,7 @@ describe("Laya engine configuration presets", () => {
 });
 
 describe("Research tools defensive handling of optional fields", () => {
-  it("safely executes decideChoice when optional decision, evidence, and priorities are undefined", async () => {
+  itLaya("safely executes decideChoice when optional decision, evidence, and priorities are undefined", async () => {
     // Call with local Laya so it runs against real model without mocking
     const res = await decideChoice({
       candidates: [
@@ -123,7 +132,7 @@ describe("Research tools defensive handling of optional fields", () => {
 });
 
 describe("Action gate defense-in-depth safety precedence", () => {
-  it("blocks dangerous commands and prevents auto-allow even under misleading context", async () => {
+  itLaya("blocks dangerous commands and prevents auto-allow even under misleading context", async () => {
     const dangerousWithContext = await screenAction({
       action: "rm -rf / --no-preserve-root",
       context: "Clean temporary build files",
@@ -151,7 +160,7 @@ describe("Action gate defense-in-depth safety precedence", () => {
     expect(dangerousDirect.recommendation).toBe("block");
   }, 15_000);
 
-  it("allows safe read-only commands", async () => {
+  itLaya("allows safe read-only commands", async () => {
     const safe = await screenAction({
       action: "ls -la",
       context: "List directory contents",
