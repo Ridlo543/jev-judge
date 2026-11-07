@@ -26,9 +26,11 @@ export const REVIEW_WEIGHTS = {
   blast_radius: 0.15,
 } as const;
 
-export function truncate(text: string, maxChars: number): { text: string; truncated: boolean } {
-  if (text.length <= maxChars) return { text, truncated: false };
-  return { text: `${text.slice(0, maxChars)} […truncated]`, truncated: true };
+export function truncate(text: unknown, maxChars: number): { text: string; truncated: boolean } {
+  if (text === null || text === undefined) return { text: "", truncated: false };
+  const str = typeof text === "string" ? text : String(text);
+  if (str.length <= maxChars) return { text: str, truncated: false };
+  return { text: `${str.slice(0, maxChars)} […truncated]`, truncated: true };
 }
 
 export function reviewComposite(scores: {
@@ -137,11 +139,20 @@ export async function reviewDiff(
   const blastRadius = parseScore(ans.blast_radius, 2);
   const safeToApply = (ans.safe_to_apply as NoulAnswer)?.noul ?? 0;
 
+  const getConf = (ansObj: unknown, def = 0.8): number => {
+    if (!ansObj || typeof ansObj !== "object") return def;
+    const rec = ansObj as Record<string, unknown>;
+    if (typeof rec.answer_confidence === "number") return rec.answer_confidence;
+    if (typeof rec.confidence === "number") return rec.confidence;
+    if (typeof rec.noul === "number") return rec.noul;
+    return def;
+  };
+
   const minConf = Math.min(
-    (ans.correctness as ScoreAnswer)?.confidence ?? ((ans.correctness as NoulAnswer)?.noul !== undefined ? 0.8 : 1.0),
-    (ans.spec_match as ScoreAnswer)?.confidence ?? ((ans.spec_match as NoulAnswer)?.noul !== undefined ? 0.8 : 1.0),
-    (ans.test_gap as ScoreAnswer)?.confidence ?? ((ans.test_gap as NoulAnswer)?.noul !== undefined ? 0.8 : 1.0),
-    (ans.blast_radius as ScoreAnswer)?.confidence ?? ((ans.blast_radius as NoulAnswer)?.noul !== undefined ? 0.8 : 1.0),
+    getConf(ans.correctness, 1.0),
+    getConf(ans.spec_match, 1.0),
+    getConf(ans.test_gap, 1.0),
+    getConf(ans.blast_radius, 1.0),
   );
 
   const composite = reviewComposite({
@@ -378,13 +389,20 @@ export async function screenAction(
   const risk_score = Math.round(rawRisk * 100) / 100;
   const touches_prod = (prodAns?.noul ?? 0) >= 0.5;
 
-  if ((recAns as ChoiceAnswer | undefined)?.choice === "allow" || (recAns as ChoiceAnswer | undefined)?.choice === "block") {
-    recommendation = (recAns as ChoiceAnswer).choice as "allow" | "block";
-  } else if (risk_score >= 2.5 || (touches_prod && risk_score >= 2.0)) {
+  const chosen = (recAns as ChoiceAnswer | undefined)?.choice;
+
+  // Defense-in-depth safety precedence:
+  // 1. High risk commands (risk_score >= 2.5) MUST be blocked unconditionally.
+  // 2. High impact actions (touches_prod with risk >= 1.6) MUST be blocked.
+  if (risk_score >= 2.5 || (touches_prod && risk_score >= 1.6) || chosen === "block") {
     recommendation = "block";
-  } else if (risk_score >= 1.5 || touches_prod) {
+  }
+  // 3. Moderate risk or touches prod MUST be at least confirmed by a human.
+  else if (risk_score >= 1.5 || touches_prod || chosen === "confirm") {
     recommendation = "confirm";
-  } else {
+  }
+  // 4. Low risk (< 1.5) non-prod actions can be allowed.
+  else {
     recommendation = "allow";
   }
 

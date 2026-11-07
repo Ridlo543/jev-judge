@@ -29,11 +29,14 @@ Fast, calibrated decision model runner for coding gating, diff reviews, research
   -q, --question <text>      Yes/No question to answer
   -c, --choice <options>     Comma-separated list of choice options (e.g. "bug,feature,docs")
   --score <levels>           Comma-separated rating scale (e.g. "trivial,minor,major,critical")
-  --questions <json|file>    Multi-question JSON string or path to JSON rubric file
+  --questions <json>          Multi-question JSON string or rubric
+  --questions-file <path>     Read questions JSON from file
   --request <text>           Task specification / ticket description for review/gate
-  --evidence <file|text>     Evidence log / test runner output for gate
+  --evidence <text>          Evidence log / test runner output for gate (use @path for file)
+  --evidence-file <path>     Read evidence log directly from file
   --claim <claim>            Claim to verify in gate (can be repeated)
-  --timeout <ms>             Request timeout in milliseconds (default: 20000)
+  --timeout <ms>             Request timeout in milliseconds (default: 35000)
+  --laya                     Convenience flag for local Laya engine (http://127.0.0.1:20130)
   --json                     Output result as formatted JSON to stdout
   --raw                      Output raw unformatted JSON
   --quiet                    Output only the bare verdict (e.g. "true", "auto", "0.95")
@@ -84,6 +87,7 @@ async function main(): Promise<void> {
   let choice: string | undefined;
   let score: string | undefined;
   let questionsArg: string | undefined;
+  let questionInput: SimplifiedQuestionInput | undefined;
   let filePath: string | undefined;
   let requestText: string | undefined;
   let evidenceText: string | undefined;
@@ -108,12 +112,19 @@ async function main(): Promise<void> {
 
     if (arg === "-s" || arg === "--state") {
       state = filteredArgs[++i];
-    } else if (arg === "-f" || arg === "--file" || arg === "--diff") {
+    } else if (arg === "-f" || arg === "--file") {
+      filePath = filteredArgs[++i];
+    } else if (arg === "--diff") {
       const val = filteredArgs[++i];
-      if (fs.existsSync(val)) {
+      if (val === "-") {
+        useStdin = true;
+      } else if (fs.existsSync(val)) {
         filePath = val;
-      } else {
+      } else if (val && (val.includes("\n") || val.startsWith("diff --git") || val.startsWith("Index: ") || val.startsWith("--- "))) {
         state = val;
+      } else {
+        console.error(`\x1b[31mError: Diff file not found: ${val}\x1b[0m`);
+        process.exit(1);
       }
     } else if (arg === "-q" || arg === "--question") {
       question = filteredArgs[++i];
@@ -127,11 +138,44 @@ async function main(): Promise<void> {
       requestText = filteredArgs[++i];
     } else if (arg === "--evidence") {
       const ev = filteredArgs[++i];
-      if (fs.existsSync(ev)) {
+      if (ev.startsWith("@")) {
+        const evPath = ev.slice(1);
+        if (!fs.existsSync(evPath)) {
+          console.error(`\x1b[31mError: Evidence file not found: ${evPath}\x1b[0m`);
+          process.exit(1);
+        }
+        evidenceText = fs.readFileSync(evPath, "utf8");
+      } else if (fs.existsSync(ev)) {
         evidenceText = fs.readFileSync(ev, "utf8");
+      } else if (ev && (ev.endsWith(".log") || ev.endsWith(".txt") || ev.endsWith(".json") || ev.includes("/") || ev.includes("\\"))) {
+        console.error(`\x1b[31mError: Evidence file not found: ${ev}\x1b[0m`);
+        process.exit(1);
       } else {
         evidenceText = ev;
       }
+    } else if (arg === "--evidence-file") {
+      const evPath = filteredArgs[++i];
+      if (!fs.existsSync(evPath)) {
+        console.error(`\x1b[31mError: Evidence file not found: ${evPath}\x1b[0m`);
+        process.exit(1);
+      }
+      evidenceText = fs.readFileSync(evPath, "utf8");
+    } else if (arg === "--questions-file") {
+      const qPath = filteredArgs[++i];
+      if (!fs.existsSync(qPath)) {
+        console.error(`\x1b[31mError: Questions file not found: ${qPath}\x1b[0m`);
+        process.exit(1);
+      }
+      try {
+        questionInput = JSON.parse(fs.readFileSync(qPath, "utf8"));
+      } catch (err) {
+        console.error(`\x1b[31mError parsing questions JSON file: ${String(err)}\x1b[0m`);
+        process.exit(1);
+      }
+    } else if (arg === "--laya") {
+      explicitModel = "laya";
+      if (!explicitBaseUrl) explicitBaseUrl = "http://127.0.0.1:20130/v1";
+      if (!explicitApiKey) explicitApiKey = "none";
     } else if (arg === "--claim") {
       claims.push(filteredArgs[++i]);
     } else if (arg === "--json") {
@@ -211,10 +255,27 @@ async function main(): Promise<void> {
 
   // Subcommand: review
   if (subCommand === "review") {
-    const diff = state || positional[0];
-    const req = requestText || positional[1] || "Review code patch for correctness, security, and quality";
+    let diff = state;
+    let req = requestText;
+
+    if (!diff && positional.length > 0) {
+      const pos = positional[0];
+      if (pos === "-") {
+        diff = await readStdin();
+      } else if (fs.existsSync(pos)) {
+        diff = fs.readFileSync(pos, "utf8");
+      } else if (pos.includes("\n") || pos.startsWith("diff --git") || pos.startsWith("Index: ") || pos.startsWith("--- ")) {
+        diff = pos;
+      } else {
+        console.error(`\x1b[31mError: Diff file not found: ${pos}\x1b[0m`);
+        process.exit(1);
+      }
+      req = req || positional[1];
+    }
+    req = req || "Review code patch for correctness, security, and quality";
+
     if (!diff) {
-      console.error("\x1b[31mError: Missing diff for review. Pipe via --stdin or provide --file.\x1b[0m");
+      console.error("\x1b[31mError: Missing diff for review. Pipe via --stdin, pass as positional argument, or provide --file.\x1b[0m");
       process.exit(1);
     }
     const res = await reviewDiff({ diff, request: req }, { options: clientOptions });
@@ -235,11 +296,28 @@ async function main(): Promise<void> {
 
   // Subcommand: gate
   if (subCommand === "gate") {
-    const diff = state || positional[0];
-    const req = requestText || positional[1] || "Verify acceptance criteria";
-    const evidence = evidenceText || positional[2] || "";
+    let diff = state;
+    let req = requestText;
+
+    if (!diff && positional.length > 0) {
+      const pos = positional[0];
+      if (pos === "-") {
+        diff = await readStdin();
+      } else if (fs.existsSync(pos)) {
+        diff = fs.readFileSync(pos, "utf8");
+      } else if (pos.includes("\n") || pos.startsWith("diff --git") || pos.startsWith("Index: ") || pos.startsWith("--- ")) {
+        diff = pos;
+      } else {
+        console.error(`\x1b[31mError: Diff file not found: ${pos}\x1b[0m`);
+        process.exit(1);
+      }
+      req = req || positional[1];
+    }
+    req = req || "Verify acceptance criteria";
+    const evidence = evidenceText || "";
+
     if (!diff) {
-      console.error("\x1b[31mError: Missing diff for gate. Pipe via --stdin or provide --file.\x1b[0m");
+      console.error("\x1b[31mError: Missing diff for gate. Pipe via --stdin, pass as positional argument, or provide --file.\x1b[0m");
       process.exit(1);
     }
     const res = await gatePatch({ diff, request: req, claims, evidence }, { options: clientOptions });
@@ -273,36 +351,59 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  let questionInput: SimplifiedQuestionInput = "Is this true and valid?";
-  if (questionsArg) {
-    if (fs.existsSync(questionsArg)) {
-      questionInput = JSON.parse(fs.readFileSync(questionsArg, "utf8"));
-    } else {
-      try {
-        questionInput = JSON.parse(questionsArg);
-      } catch {
-        questionInput = questionsArg;
+  if (!questionInput) {
+    if (questionsArg) {
+      if (questionsArg.startsWith("@")) {
+        const qPath = questionsArg.slice(1);
+        if (!fs.existsSync(qPath)) {
+          console.error(`\x1b[31mError: Questions file not found: ${qPath}\x1b[0m`);
+          process.exit(1);
+        }
+        try {
+          questionInput = JSON.parse(fs.readFileSync(qPath, "utf8"));
+        } catch (err) {
+          console.error(`\x1b[31mError parsing questions JSON file: ${String(err)}\x1b[0m`);
+          process.exit(1);
+        }
+      } else if (fs.existsSync(questionsArg)) {
+        try {
+          questionInput = JSON.parse(fs.readFileSync(questionsArg, "utf8"));
+        } catch (err) {
+          console.error(`\x1b[31mError parsing questions JSON file: ${String(err)}\x1b[0m`);
+          process.exit(1);
+        }
+      } else if (questionsArg.endsWith(".json") || questionsArg.includes("/") || questionsArg.includes("\\")) {
+        console.error(`\x1b[31mError: Questions file not found: ${questionsArg}\x1b[0m`);
+        process.exit(1);
+      } else {
+        try {
+          questionInput = JSON.parse(questionsArg);
+        } catch {
+          questionInput = questionsArg;
+        }
       }
+    } else if (choice) {
+      const options = choice.split(",").map((s) => s.trim()).filter(Boolean);
+      questionInput = {
+        type: "choice",
+        instructions: question || "Choose the best option:",
+        options,
+      };
+    } else if (score) {
+      const levels = score.split(",").map((s) => s.trim()).filter(Boolean);
+      questionInput = {
+        type: "score",
+        instructions: question || "Rate the level:",
+        levels,
+      };
+    } else if (question) {
+      questionInput = question;
+    } else {
+      questionInput = "Is this true and valid?";
     }
-  } else if (choice) {
-    const options = choice.split(",").map((s) => s.trim()).filter(Boolean);
-    questionInput = {
-      type: "choice",
-      instructions: question || "Choose the best option:",
-      options,
-    };
-  } else if (score) {
-    const levels = score.split(",").map((s) => s.trim()).filter(Boolean);
-    questionInput = {
-      type: "score",
-      instructions: question || "Rate the level:",
-      levels,
-    };
-  } else if (question) {
-    questionInput = question;
   }
 
-  const res = await judge(state, questionInput, clientOptions);
+  const res = await judge(state, questionInput || "Is this true and valid?", clientOptions);
 
   if (rawOutput) {
     console.log(JSON.stringify(res.raw));

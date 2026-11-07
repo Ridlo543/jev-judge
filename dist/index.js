@@ -83,10 +83,10 @@ function resolveConfig(explicit = {}) {
   } else {
     protocol = "chat-completions";
   }
-  let baseUrl = (explicit.baseUrl || fileConfig.baseUrl || env.JEV_BASE_URL || env.OPENAI_BASE_URL || "").trim();
-  baseUrl = baseUrl.replace(/\/+$/, "");
-  const apiKey = (explicit.apiKey || fileConfig.apiKey || env.JEV_API_KEY || env.OPENAI_API_KEY || "").trim();
-  const model = (explicit.model || fileConfig.model || env.JEV_MODEL || env.OPENAI_MODEL || "").trim();
+  let model = (explicit.model || fileConfig.model || env.JEV_MODEL || env.OPENAI_MODEL || "").trim();
+  const isLaya = model.toLowerCase() === "laya" || model.toLowerCase().startsWith("laya-");
+  let baseUrl = (explicit.baseUrl || fileConfig.baseUrl || (isLaya ? "http://127.0.0.1:20130/v1" : env.JEV_BASE_URL || env.OPENAI_BASE_URL) || "").trim().replace(/\/+$/, "");
+  let apiKey = (explicit.apiKey || fileConfig.apiKey || (isLaya ? "none" : env.JEV_API_KEY || env.OPENAI_API_KEY) || "").trim();
   const rawTimeout = env.JEV_TIMEOUT_MS || env.OPENAI_TIMEOUT_MS;
   const timeoutMs = explicit.timeoutMs ?? fileConfig.timeoutMs ?? (rawTimeout ? Number.parseInt(rawTimeout, 10) : DEFAULT_TIMEOUT_MS);
   const defaultThreshold = explicit.defaultThreshold ?? fileConfig.defaultThreshold ?? DEFAULT_THRESHOLD;
@@ -113,7 +113,7 @@ function resolveConfig(explicit = {}) {
 function requireConfig(explicit = {}) {
   const config = resolveConfig(explicit);
   if (!config.baseUrl) {
-    throw new Error("Missing Jev Base URL. Please configure it manually in your MCP config (env.JEV_BASE_URL or env.OPENAI_BASE_URL), in jev.config.json, or pass --base-url.");
+    throw new Error("Missing Jev Base URL. Please configure it manually in your MCP config (env.JEV_BASE_URL or env.OPENAI_BASE_URL), in jev.config.json, pass --base-url, or use --laya for local server.");
   }
   if (!config.apiKey) {
     throw new Error("Missing Jev API Key. Please configure it manually in your MCP config (env.JEV_API_KEY or env.OPENAI_API_KEY), in jev.config.json, or pass --api-key.");
@@ -264,8 +264,13 @@ async function rawJevJudgment(state, questions, options = {}) {
       }
       for (const key of Object.keys(parsedAnswers)) {
         const ans = parsedAnswers[key];
-        if (ans && ans.type === "noul") {
-          ans.bool = ans.noul;
+        if (ans) {
+          if (ans.type === "noul") {
+            ans.bool = ans.noul;
+          }
+          if (typeof ans.answer_confidence === "number") {
+            ans.confidence = ans.answer_confidence;
+          }
         }
       }
       return {
@@ -278,7 +283,16 @@ async function rawJevJudgment(state, questions, options = {}) {
       if (err instanceof Error && err.name === "AbortError") {
         lastError = new Error(`Jev request timed out after ${timeoutMs}ms (endpoint: ${targetUrl}, key: ${redactApiKey(config.apiKey)})`);
       } else {
-        lastError = err instanceof Error ? err : new Error(String(err));
+        const errStr = String(err);
+        if (errStr.includes("ECONNREFUSED") || errStr.includes("connection refused") || errStr.includes("connect ECONNREFUSED")) {
+          if (targetUrl.includes("20130") || model.toLowerCase().includes("laya")) {
+            lastError = new Error(`Laya local decision server is offline at ${targetUrl}. Start it with 'laya start' in your terminal or run D:\\Programming\\project\\laya-server\\start.bat`);
+          } else {
+            lastError = err instanceof Error ? err : new Error(errStr);
+          }
+        } else {
+          lastError = err instanceof Error ? err : new Error(errStr);
+        }
       }
       if (attempt < maxRetries) {
         attempt++;
@@ -399,25 +413,30 @@ function normalizeQuestions(input) {
 async function judge(state, questionInput, options = {}) {
   const questions = normalizeQuestions(questionInput);
   const expandedQuestions = {};
-  for (const [key, q] of Object.entries(questions)) {
-    expandedQuestions[key] = q;
-    if (q.type === "choice") {
-      const criteria = q.criteria || {};
-      for (const [optKey, optDesc] of Object.entries(criteria)) {
-        expandedQuestions[`opt_${key}_${optKey}`] = {
-          type: "noul",
-          instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
-          criteria: { true: optKey, false: `not ${optKey}` }
-        };
-      }
-    } else if (q.type === "score") {
-      const criteria = q.criteria || [];
-      for (let i = 0;i < criteria.length; i++) {
-        expandedQuestions[`lvl_${key}_${i}`] = {
-          type: "noul",
-          instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
-          criteria: { true: criteria[i], false: `not ${criteria[i]}` }
-        };
+  const isLaya = options.model?.toLowerCase().includes("laya") || options.baseUrl && options.baseUrl.includes("20130");
+  if (isLaya) {
+    Object.assign(expandedQuestions, questions);
+  } else {
+    for (const [key, q] of Object.entries(questions)) {
+      expandedQuestions[key] = q;
+      if (q.type === "choice") {
+        const criteria = q.criteria || {};
+        for (const [optKey, optDesc] of Object.entries(criteria)) {
+          expandedQuestions[`opt_${key}_${optKey}`] = {
+            type: "noul",
+            instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
+            criteria: { true: optKey, false: `not ${optKey}` }
+          };
+        }
+      } else if (q.type === "score") {
+        const criteria = q.criteria || [];
+        for (let i = 0;i < criteria.length; i++) {
+          expandedQuestions[`lvl_${key}_${i}`] = {
+            type: "noul",
+            instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
+            criteria: { true: criteria[i], false: `not ${criteria[i]}` }
+          };
+        }
       }
     }
   }
@@ -582,9 +601,12 @@ var REVIEW_WEIGHTS = {
   blast_radius: 0.15
 };
 function truncate(text, maxChars) {
-  if (text.length <= maxChars)
-    return { text, truncated: false };
-  return { text: `${text.slice(0, maxChars)} […truncated]`, truncated: true };
+  if (text === null || text === undefined)
+    return { text: "", truncated: false };
+  const str = typeof text === "string" ? text : String(text);
+  if (str.length <= maxChars)
+    return { text: str, truncated: false };
+  return { text: `${str.slice(0, maxChars)} […truncated]`, truncated: true };
 }
 function reviewComposite(scores) {
   const clamp01 = (v) => Math.min(1, Math.max(0, v));
@@ -666,7 +688,19 @@ ${testsTrunc.text}`;
   const testGap = parseScore(ans.test_gap, 2);
   const blastRadius = parseScore(ans.blast_radius, 2);
   const safeToApply = ans.safe_to_apply?.noul ?? 0;
-  const minConf = Math.min(ans.correctness?.confidence ?? (ans.correctness?.noul !== undefined ? 0.8 : 1), ans.spec_match?.confidence ?? (ans.spec_match?.noul !== undefined ? 0.8 : 1), ans.test_gap?.confidence ?? (ans.test_gap?.noul !== undefined ? 0.8 : 1), ans.blast_radius?.confidence ?? (ans.blast_radius?.noul !== undefined ? 0.8 : 1));
+  const getConf = (ansObj, def = 0.8) => {
+    if (!ansObj || typeof ansObj !== "object")
+      return def;
+    const rec = ansObj;
+    if (typeof rec.answer_confidence === "number")
+      return rec.answer_confidence;
+    if (typeof rec.confidence === "number")
+      return rec.confidence;
+    if (typeof rec.noul === "number")
+      return rec.noul;
+    return def;
+  };
+  const minConf = Math.min(getConf(ans.correctness, 1), getConf(ans.spec_match, 1), getConf(ans.test_gap, 1), getConf(ans.blast_radius, 1));
   const composite = reviewComposite({
     correctness,
     specMatch,
@@ -865,11 +899,10 @@ ${input.context}` : "");
   }
   const risk_score = Math.round(rawRisk * 100) / 100;
   const touches_prod = (prodAns?.noul ?? 0) >= 0.5;
-  if (recAns?.choice === "allow" || recAns?.choice === "block") {
-    recommendation = recAns.choice;
-  } else if (risk_score >= 2.5 || touches_prod && risk_score >= 2) {
+  const chosen = recAns?.choice;
+  if (risk_score >= 2.5 || touches_prod && risk_score >= 1.6 || chosen === "block") {
     recommendation = "block";
-  } else if (risk_score >= 1.5 || touches_prod) {
+  } else if (risk_score >= 1.5 || touches_prod || chosen === "confirm") {
     recommendation = "confirm";
   } else {
     recommendation = "allow";

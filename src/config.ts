@@ -133,32 +133,30 @@ export function resolveConfig(explicit: JevConfigInput = {}): JevResolvedConfig 
     protocol = "chat-completions";
   }
 
-  // 2. Base URL: Pure manual input from user
-  let baseUrl = (
-    explicit.baseUrl ||
-    fileConfig.baseUrl ||
-    env.JEV_BASE_URL ||
-    env.OPENAI_BASE_URL ||
-    ""
-  ).trim();
-
-  baseUrl = baseUrl.replace(/\/+$/, "");
-
-  // 3. API Key: Pure manual input from user
-  const apiKey = (
-    explicit.apiKey ||
-    fileConfig.apiKey ||
-    env.JEV_API_KEY ||
-    env.OPENAI_API_KEY ||
-    ""
-  ).trim();
-
-  // 4. Model: Pure manual input from user
-  const model = (
+  // 2. Model: Pure manual input from user
+  let model = (
     explicit.model ||
     fileConfig.model ||
     env.JEV_MODEL ||
     env.OPENAI_MODEL ||
+    ""
+  ).trim();
+
+  const isLaya = model.toLowerCase() === "laya" || model.toLowerCase().startsWith("laya-");
+
+  // 3. Base URL: If explicit or in fileConfig, use that. If isLaya, default to local Laya server unless overridden. Otherwise read env.
+  let baseUrl = (
+    explicit.baseUrl ||
+    fileConfig.baseUrl ||
+    (isLaya ? "http://127.0.0.1:20130/v1" : (env.JEV_BASE_URL || env.OPENAI_BASE_URL)) ||
+    ""
+  ).trim().replace(/\/+$/, "");
+
+  // 4. API Key: If isLaya, default to "none" unless overridden. Otherwise read env.
+  let apiKey = (
+    explicit.apiKey ||
+    fileConfig.apiKey ||
+    (isLaya ? "none" : (env.JEV_API_KEY || env.OPENAI_API_KEY)) ||
     ""
   ).trim();
 
@@ -213,7 +211,7 @@ export function requireConfig(explicit: JevConfigInput = {}): JevResolvedConfig 
 
   if (!config.baseUrl) {
     throw new Error(
-      "Missing Jev Base URL. Please configure it manually in your MCP config (env.JEV_BASE_URL or env.OPENAI_BASE_URL), in jev.config.json, or pass --base-url.",
+      "Missing Jev Base URL. Please configure it manually in your MCP config (env.JEV_BASE_URL or env.OPENAI_BASE_URL), in jev.config.json, pass --base-url, or use --laya for local server.",
     );
   }
 

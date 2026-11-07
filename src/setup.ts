@@ -53,39 +53,52 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
       client = "workspace";
     }
 
-    // 2. Base URL
+    // 2. Select Decision Engine
+    let engineChoice = "1";
+    if (isInteractive && !options.baseUrl && !options.model) {
+      console.log("Select decision engine preset:");
+      console.log("  [1] Jev Cloud / Router (OpenAI-compatible endpoint, proxy, or official)");
+      console.log("  [2] Laya Local CPU Server (100% offline, http://127.0.0.1:20130)\n");
+      engineChoice = await ask("Choose engine (1-2) [1]: ", "1");
+    }
+
     let baseUrl = options.baseUrl;
-    if (!baseUrl && isInteractive) {
-      baseUrl = await ask(
-        "Enter Base URL (e.g. https://api.openai.com/v1, OpenRouter, or your proxy): ",
-      );
-    }
-    if (!baseUrl) {
-      throw new Error("Base URL is required. Provide --base-url or enter one in the wizard.");
-    }
-    baseUrl = baseUrl.trim().replace(/\/+$/, "");
-
-    // 3. API Key
     let apiKey = options.apiKey;
-    if (!apiKey && isInteractive) {
-      apiKey = await ask("Enter API Key (will be saved in your local client config): ");
-    }
-    if (!apiKey) {
-      throw new Error("API Key is required. Provide --api-key or enter one in the wizard.");
-    }
-    apiKey = apiKey.trim();
-
-    // 4. Model ID
     let model = options.model;
-    if (!model && isInteractive) {
-      const defaultModel = "jev-latest";
-      model = await ask(`Enter Model ID [${defaultModel}]: `, defaultModel);
-    }
-    if (!model) {
-      model = "jev-latest";
-    }
-    model = model.trim();
 
+    if (engineChoice === "2") {
+      baseUrl = (baseUrl || "http://127.0.0.1:20130/v1").trim().replace(/\/+$/, "");
+      apiKey = (apiKey || "none").trim();
+      model = (model || "laya").trim();
+      console.log(`\nUsing Laya Local CPU engine preset: ${baseUrl} (model: ${model})\n`);
+    } else {
+      if (!baseUrl && isInteractive) {
+        baseUrl = await ask(
+          "Enter Base URL (e.g. https://api.openai.com/v1, OpenRouter, or your proxy): ",
+        );
+      }
+      if (!baseUrl) {
+        throw new Error("Base URL is required. Provide --base-url or enter one in the wizard.");
+      }
+      baseUrl = baseUrl.trim().replace(/\/+$/, "");
+
+      if (!apiKey && isInteractive) {
+        apiKey = await ask("Enter API Key (will be saved in your local client config): ");
+      }
+      if (!apiKey) {
+        throw new Error("API Key is required. Provide --api-key or enter one in the wizard.");
+      }
+      apiKey = apiKey.trim();
+
+      if (!model && isInteractive) {
+        const defaultModel = "jev-latest";
+        model = await ask(`Enter Model ID [${defaultModel}]: `, defaultModel);
+      }
+      if (!model) {
+        model = "jev-latest";
+      }
+      model = model.trim();
+    }
     // 5. Execution Command
     const execCommand = options.command || (fs.existsSync(path.resolve(process.cwd(), "jev-mcp.exe")) ? path.resolve(process.cwd(), "jev-mcp.exe") : "npx");
     const execArgs = execCommand === "npx" ? ["-y", "jev-judge", "mcp"] : undefined;

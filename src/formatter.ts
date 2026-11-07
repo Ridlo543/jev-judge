@@ -899,6 +899,8 @@ function escapeCell(str: string): string {
   return str.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
-function truncate(str: string, maxLen: number): string {
-  return str.length > maxLen ? `${str.slice(0, maxLen - 3)}...` : str;
+function truncate(str: unknown, maxLen: number): string {
+  if (str === null || str === undefined) return "";
+  const s = typeof str === "string" ? str : String(str);
+  return s.length > maxLen ? `${s.slice(0, maxLen - 3)}...` : s;
 }

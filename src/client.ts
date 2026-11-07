@@ -223,10 +223,16 @@ export async function rawJevJudgment(
       }
 
       // Ensure compatibility for boolean consumers (OMP / generic callers)
+      // and normalize calibrated confidence for models reporting answer_confidence (e.g. Laya)
       for (const key of Object.keys(parsedAnswers)) {
-        const ans = parsedAnswers[key];
-        if (ans && ans.type === "noul") {
-          ans.bool = ans.noul;
+        const ans = parsedAnswers[key] as unknown as Record<string, unknown> | undefined;
+        if (ans) {
+          if (ans.type === "noul") {
+            ans.bool = ans.noul;
+          }
+          if (typeof ans.answer_confidence === "number") {
+            ans.confidence = ans.answer_confidence;
+          }
         }
       }
 
@@ -244,7 +250,18 @@ export async function rawJevJudgment(
           )})`,
         );
       } else {
-        lastError = err instanceof Error ? err : new Error(String(err));
+        const errStr = String(err);
+        if (errStr.includes("ECONNREFUSED") || errStr.includes("connection refused") || errStr.includes("connect ECONNREFUSED")) {
+          if (targetUrl.includes("20130") || model.toLowerCase().includes("laya")) {
+            lastError = new Error(
+              `Laya local decision server is offline at ${targetUrl}. Start it with 'laya start' in your terminal or run D:\\Programming\\project\\laya-server\\start.bat`,
+            );
+          } else {
+            lastError = err instanceof Error ? err : new Error(errStr);
+          }
+        } else {
+          lastError = err instanceof Error ? err : new Error(errStr);
+        }
       }
 
       if (attempt < maxRetries) {
@@ -423,26 +440,34 @@ export async function judge<TAnswers extends Answers = Answers>(
 ): Promise<JudgeResponse<TAnswers>> {
   const questions = normalizeQuestions(questionInput);
   const expandedQuestions: Questions = {};
+  const isLaya =
+    options.model?.toLowerCase().includes("laya") ||
+    (options.baseUrl && options.baseUrl.includes("20130"));
 
-  for (const [key, q] of Object.entries(questions)) {
-    expandedQuestions[key] = q;
-    if (q.type === "choice") {
-      const criteria = q.criteria || {};
-      for (const [optKey, optDesc] of Object.entries(criteria)) {
-        expandedQuestions[`opt_${key}_${optKey}`] = {
-          type: "noul",
-          instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
-          criteria: { true: optKey, false: `not ${optKey}` },
-        };
-      }
-    } else if (q.type === "score") {
-      const criteria = q.criteria || [];
-      for (let i = 0; i < criteria.length; i++) {
-        expandedQuestions[`lvl_${key}_${i}`] = {
-          type: "noul",
-          instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
-          criteria: { true: criteria[i], false: `not ${criteria[i]}` },
-        };
+  if (isLaya) {
+    // Laya natively evaluates choice and score questions in a single forward pass
+    Object.assign(expandedQuestions, questions);
+  } else {
+    for (const [key, q] of Object.entries(questions)) {
+      expandedQuestions[key] = q;
+      if (q.type === "choice") {
+        const criteria = q.criteria || {};
+        for (const [optKey, optDesc] of Object.entries(criteria)) {
+          expandedQuestions[`opt_${key}_${optKey}`] = {
+            type: "noul",
+            instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
+            criteria: { true: optKey, false: `not ${optKey}` },
+          };
+        }
+      } else if (q.type === "score") {
+        const criteria = q.criteria || [];
+        for (let i = 0; i < criteria.length; i++) {
+          expandedQuestions[`lvl_${key}_${i}`] = {
+            type: "noul",
+            instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
+            criteria: { true: criteria[i], false: `not ${criteria[i]}` },
+          };
+        }
       }
     }
   }

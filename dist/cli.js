@@ -89,10 +89,10 @@ function resolveConfig(explicit = {}) {
   } else {
     protocol = "chat-completions";
   }
-  let baseUrl = (explicit.baseUrl || fileConfig.baseUrl || env.JEV_BASE_URL || env.OPENAI_BASE_URL || "").trim();
-  baseUrl = baseUrl.replace(/\/+$/, "");
-  const apiKey = (explicit.apiKey || fileConfig.apiKey || env.JEV_API_KEY || env.OPENAI_API_KEY || "").trim();
-  const model = (explicit.model || fileConfig.model || env.JEV_MODEL || env.OPENAI_MODEL || "").trim();
+  let model = (explicit.model || fileConfig.model || env.JEV_MODEL || env.OPENAI_MODEL || "").trim();
+  const isLaya = model.toLowerCase() === "laya" || model.toLowerCase().startsWith("laya-");
+  let baseUrl = (explicit.baseUrl || fileConfig.baseUrl || (isLaya ? "http://127.0.0.1:20130/v1" : env.JEV_BASE_URL || env.OPENAI_BASE_URL) || "").trim().replace(/\/+$/, "");
+  let apiKey = (explicit.apiKey || fileConfig.apiKey || (isLaya ? "none" : env.JEV_API_KEY || env.OPENAI_API_KEY) || "").trim();
   const rawTimeout = env.JEV_TIMEOUT_MS || env.OPENAI_TIMEOUT_MS;
   const timeoutMs = explicit.timeoutMs ?? fileConfig.timeoutMs ?? (rawTimeout ? Number.parseInt(rawTimeout, 10) : DEFAULT_TIMEOUT_MS);
   const defaultThreshold = explicit.defaultThreshold ?? fileConfig.defaultThreshold ?? DEFAULT_THRESHOLD;
@@ -119,7 +119,7 @@ function resolveConfig(explicit = {}) {
 function requireConfig(explicit = {}) {
   const config = resolveConfig(explicit);
   if (!config.baseUrl) {
-    throw new Error("Missing Jev Base URL. Please configure it manually in your MCP config (env.JEV_BASE_URL or env.OPENAI_BASE_URL), in jev.config.json, or pass --base-url.");
+    throw new Error("Missing Jev Base URL. Please configure it manually in your MCP config (env.JEV_BASE_URL or env.OPENAI_BASE_URL), in jev.config.json, pass --base-url, or use --laya for local server.");
   }
   if (!config.apiKey) {
     throw new Error("Missing Jev API Key. Please configure it manually in your MCP config (env.JEV_API_KEY or env.OPENAI_API_KEY), in jev.config.json, or pass --api-key.");
@@ -271,8 +271,13 @@ async function rawJevJudgment(state, questions, options = {}) {
       }
       for (const key of Object.keys(parsedAnswers)) {
         const ans = parsedAnswers[key];
-        if (ans && ans.type === "noul") {
-          ans.bool = ans.noul;
+        if (ans) {
+          if (ans.type === "noul") {
+            ans.bool = ans.noul;
+          }
+          if (typeof ans.answer_confidence === "number") {
+            ans.confidence = ans.answer_confidence;
+          }
         }
       }
       return {
@@ -285,7 +290,16 @@ async function rawJevJudgment(state, questions, options = {}) {
       if (err instanceof Error && err.name === "AbortError") {
         lastError = new Error(`Jev request timed out after ${timeoutMs}ms (endpoint: ${targetUrl}, key: ${redactApiKey(config.apiKey)})`);
       } else {
-        lastError = err instanceof Error ? err : new Error(String(err));
+        const errStr = String(err);
+        if (errStr.includes("ECONNREFUSED") || errStr.includes("connection refused") || errStr.includes("connect ECONNREFUSED")) {
+          if (targetUrl.includes("20130") || model.toLowerCase().includes("laya")) {
+            lastError = new Error(`Laya local decision server is offline at ${targetUrl}. Start it with 'laya start' in your terminal or run D:\\Programming\\project\\laya-server\\start.bat`);
+          } else {
+            lastError = err instanceof Error ? err : new Error(errStr);
+          }
+        } else {
+          lastError = err instanceof Error ? err : new Error(errStr);
+        }
       }
       if (attempt < maxRetries) {
         attempt++;
@@ -406,25 +420,30 @@ function normalizeQuestions(input) {
 async function judge(state, questionInput, options = {}) {
   const questions = normalizeQuestions(questionInput);
   const expandedQuestions = {};
-  for (const [key, q] of Object.entries(questions)) {
-    expandedQuestions[key] = q;
-    if (q.type === "choice") {
-      const criteria = q.criteria || {};
-      for (const [optKey, optDesc] of Object.entries(criteria)) {
-        expandedQuestions[`opt_${key}_${optKey}`] = {
-          type: "noul",
-          instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
-          criteria: { true: optKey, false: `not ${optKey}` }
-        };
-      }
-    } else if (q.type === "score") {
-      const criteria = q.criteria || [];
-      for (let i = 0;i < criteria.length; i++) {
-        expandedQuestions[`lvl_${key}_${i}`] = {
-          type: "noul",
-          instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
-          criteria: { true: criteria[i], false: `not ${criteria[i]}` }
-        };
+  const isLaya = options.model?.toLowerCase().includes("laya") || options.baseUrl && options.baseUrl.includes("20130");
+  if (isLaya) {
+    Object.assign(expandedQuestions, questions);
+  } else {
+    for (const [key, q] of Object.entries(questions)) {
+      expandedQuestions[key] = q;
+      if (q.type === "choice") {
+        const criteria = q.criteria || {};
+        for (const [optKey, optDesc] of Object.entries(criteria)) {
+          expandedQuestions[`opt_${key}_${optKey}`] = {
+            type: "noul",
+            instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
+            criteria: { true: optKey, false: `not ${optKey}` }
+          };
+        }
+      } else if (q.type === "score") {
+        const criteria = q.criteria || [];
+        for (let i = 0;i < criteria.length; i++) {
+          expandedQuestions[`lvl_${key}_${i}`] = {
+            type: "noul",
+            instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
+            criteria: { true: criteria[i], false: `not ${criteria[i]}` }
+          };
+        }
       }
     }
   }
@@ -1226,7 +1245,10 @@ function escapeCell(str) {
   return str.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 function truncate(str, maxLen) {
-  return str.length > maxLen ? `${str.slice(0, maxLen - 3)}...` : str;
+  if (str === null || str === undefined)
+    return "";
+  const s = typeof str === "string" ? str : String(str);
+  return s.length > maxLen ? `${s.slice(0, maxLen - 3)}...` : s;
 }
 
 // src/client.ts
@@ -1370,8 +1392,13 @@ async function rawJevJudgment2(state, questions, options = {}) {
       }
       for (const key of Object.keys(parsedAnswers)) {
         const ans = parsedAnswers[key];
-        if (ans && ans.type === "noul") {
-          ans.bool = ans.noul;
+        if (ans) {
+          if (ans.type === "noul") {
+            ans.bool = ans.noul;
+          }
+          if (typeof ans.answer_confidence === "number") {
+            ans.confidence = ans.answer_confidence;
+          }
         }
       }
       return {
@@ -1384,7 +1411,16 @@ async function rawJevJudgment2(state, questions, options = {}) {
       if (err instanceof Error && err.name === "AbortError") {
         lastError = new Error(`Jev request timed out after ${timeoutMs}ms (endpoint: ${targetUrl}, key: ${redactApiKey(config.apiKey)})`);
       } else {
-        lastError = err instanceof Error ? err : new Error(String(err));
+        const errStr = String(err);
+        if (errStr.includes("ECONNREFUSED") || errStr.includes("connection refused") || errStr.includes("connect ECONNREFUSED")) {
+          if (targetUrl.includes("20130") || model.toLowerCase().includes("laya")) {
+            lastError = new Error(`Laya local decision server is offline at ${targetUrl}. Start it with 'laya start' in your terminal or run D:\\Programming\\project\\laya-server\\start.bat`);
+          } else {
+            lastError = err instanceof Error ? err : new Error(errStr);
+          }
+        } else {
+          lastError = err instanceof Error ? err : new Error(errStr);
+        }
       }
       if (attempt < maxRetries) {
         attempt++;
@@ -1505,25 +1541,30 @@ function normalizeQuestions2(input) {
 async function judge2(state, questionInput, options = {}) {
   const questions = normalizeQuestions2(questionInput);
   const expandedQuestions = {};
-  for (const [key, q] of Object.entries(questions)) {
-    expandedQuestions[key] = q;
-    if (q.type === "choice") {
-      const criteria = q.criteria || {};
-      for (const [optKey, optDesc] of Object.entries(criteria)) {
-        expandedQuestions[`opt_${key}_${optKey}`] = {
-          type: "noul",
-          instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
-          criteria: { true: optKey, false: `not ${optKey}` }
-        };
-      }
-    } else if (q.type === "score") {
-      const criteria = q.criteria || [];
-      for (let i = 0;i < criteria.length; i++) {
-        expandedQuestions[`lvl_${key}_${i}`] = {
-          type: "noul",
-          instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
-          criteria: { true: criteria[i], false: `not ${criteria[i]}` }
-        };
+  const isLaya = options.model?.toLowerCase().includes("laya") || options.baseUrl && options.baseUrl.includes("20130");
+  if (isLaya) {
+    Object.assign(expandedQuestions, questions);
+  } else {
+    for (const [key, q] of Object.entries(questions)) {
+      expandedQuestions[key] = q;
+      if (q.type === "choice") {
+        const criteria = q.criteria || {};
+        for (const [optKey, optDesc] of Object.entries(criteria)) {
+          expandedQuestions[`opt_${key}_${optKey}`] = {
+            type: "noul",
+            instructions: `${q.instructions} — Is '${optKey}' (${optDesc}) the most appropriate choice?`,
+            criteria: { true: optKey, false: `not ${optKey}` }
+          };
+        }
+      } else if (q.type === "score") {
+        const criteria = q.criteria || [];
+        for (let i = 0;i < criteria.length; i++) {
+          expandedQuestions[`lvl_${key}_${i}`] = {
+            type: "noul",
+            instructions: `${q.instructions} — Does this match level '${criteria[i]}'?`,
+            criteria: { true: criteria[i], false: `not ${criteria[i]}` }
+          };
+        }
       }
     }
   }
@@ -1689,9 +1730,12 @@ var REVIEW_WEIGHTS = {
   blast_radius: 0.15
 };
 function truncate2(text, maxChars) {
-  if (text.length <= maxChars)
-    return { text, truncated: false };
-  return { text: `${text.slice(0, maxChars)} […truncated]`, truncated: true };
+  if (text === null || text === undefined)
+    return { text: "", truncated: false };
+  const str = typeof text === "string" ? text : String(text);
+  if (str.length <= maxChars)
+    return { text: str, truncated: false };
+  return { text: `${str.slice(0, maxChars)} […truncated]`, truncated: true };
 }
 function reviewComposite(scores) {
   const clamp01 = (v) => Math.min(1, Math.max(0, v));
@@ -1773,7 +1817,19 @@ ${testsTrunc.text}`;
   const testGap = parseScore(ans.test_gap, 2);
   const blastRadius = parseScore(ans.blast_radius, 2);
   const safeToApply = ans.safe_to_apply?.noul ?? 0;
-  const minConf = Math.min(ans.correctness?.confidence ?? (ans.correctness?.noul !== undefined ? 0.8 : 1), ans.spec_match?.confidence ?? (ans.spec_match?.noul !== undefined ? 0.8 : 1), ans.test_gap?.confidence ?? (ans.test_gap?.noul !== undefined ? 0.8 : 1), ans.blast_radius?.confidence ?? (ans.blast_radius?.noul !== undefined ? 0.8 : 1));
+  const getConf = (ansObj, def = 0.8) => {
+    if (!ansObj || typeof ansObj !== "object")
+      return def;
+    const rec = ansObj;
+    if (typeof rec.answer_confidence === "number")
+      return rec.answer_confidence;
+    if (typeof rec.confidence === "number")
+      return rec.confidence;
+    if (typeof rec.noul === "number")
+      return rec.noul;
+    return def;
+  };
+  const minConf = Math.min(getConf(ans.correctness, 1), getConf(ans.spec_match, 1), getConf(ans.test_gap, 1), getConf(ans.blast_radius, 1));
   const composite = reviewComposite({
     correctness,
     specMatch,
@@ -1972,11 +2028,10 @@ ${input.context}` : "");
   }
   const risk_score = Math.round(rawRisk * 100) / 100;
   const touches_prod = (prodAns?.noul ?? 0) >= 0.5;
-  if (recAns?.choice === "allow" || recAns?.choice === "block") {
-    recommendation = recAns.choice;
-  } else if (risk_score >= 2.5 || touches_prod && risk_score >= 2) {
+  const chosen = recAns?.choice;
+  if (risk_score >= 2.5 || touches_prod && risk_score >= 1.6 || chosen === "block") {
     recommendation = "block";
-  } else if (risk_score >= 1.5 || touches_prod) {
+  } else if (risk_score >= 1.5 || touches_prod || chosen === "confirm") {
     recommendation = "confirm";
   } else {
     recommendation = "allow";
@@ -9240,31 +9295,48 @@ async function runSetupWizard(options = {}) {
     } else if (!client) {
       client = "workspace";
     }
+    let engineChoice = "1";
+    if (isInteractive && !options.baseUrl && !options.model) {
+      console.log("Select decision engine preset:");
+      console.log("  [1] Jev Cloud / Router (OpenAI-compatible endpoint, proxy, or official)");
+      console.log(`  [2] Laya Local CPU Server (100% offline, http://127.0.0.1:20130)
+`);
+      engineChoice = await ask("Choose engine (1-2) [1]: ", "1");
+    }
     let baseUrl = options.baseUrl;
-    if (!baseUrl && isInteractive) {
-      baseUrl = await ask("Enter Base URL (e.g. https://api.openai.com/v1, OpenRouter, or your proxy): ");
-    }
-    if (!baseUrl) {
-      throw new Error("Base URL is required. Provide --base-url or enter one in the wizard.");
-    }
-    baseUrl = baseUrl.trim().replace(/\/+$/, "");
     let apiKey = options.apiKey;
-    if (!apiKey && isInteractive) {
-      apiKey = await ask("Enter API Key (will be saved in your local client config): ");
-    }
-    if (!apiKey) {
-      throw new Error("API Key is required. Provide --api-key or enter one in the wizard.");
-    }
-    apiKey = apiKey.trim();
     let model = options.model;
-    if (!model && isInteractive) {
-      const defaultModel = "jev-latest";
-      model = await ask(`Enter Model ID [${defaultModel}]: `, defaultModel);
+    if (engineChoice === "2") {
+      baseUrl = (baseUrl || "http://127.0.0.1:20130/v1").trim().replace(/\/+$/, "");
+      apiKey = (apiKey || "none").trim();
+      model = (model || "laya").trim();
+      console.log(`
+Using Laya Local CPU engine preset: ${baseUrl} (model: ${model})
+`);
+    } else {
+      if (!baseUrl && isInteractive) {
+        baseUrl = await ask("Enter Base URL (e.g. https://api.openai.com/v1, OpenRouter, or your proxy): ");
+      }
+      if (!baseUrl) {
+        throw new Error("Base URL is required. Provide --base-url or enter one in the wizard.");
+      }
+      baseUrl = baseUrl.trim().replace(/\/+$/, "");
+      if (!apiKey && isInteractive) {
+        apiKey = await ask("Enter API Key (will be saved in your local client config): ");
+      }
+      if (!apiKey) {
+        throw new Error("API Key is required. Provide --api-key or enter one in the wizard.");
+      }
+      apiKey = apiKey.trim();
+      if (!model && isInteractive) {
+        const defaultModel = "jev-latest";
+        model = await ask(`Enter Model ID [${defaultModel}]: `, defaultModel);
+      }
+      if (!model) {
+        model = "jev-latest";
+      }
+      model = model.trim();
     }
-    if (!model) {
-      model = "jev-latest";
-    }
-    model = model.trim();
     const execCommand = options.command || (fs2.existsSync(path2.resolve(process.cwd(), "jev-mcp.exe")) ? path2.resolve(process.cwd(), "jev-mcp.exe") : "npx");
     const execArgs = execCommand === "npx" ? ["-y", "jev-judge", "mcp"] : undefined;
     let targetPath = "";
@@ -9345,9 +9417,12 @@ var REVIEW_WEIGHTS2 = {
   blast_radius: 0.15
 };
 function truncate3(text, maxChars) {
-  if (text.length <= maxChars)
-    return { text, truncated: false };
-  return { text: `${text.slice(0, maxChars)} […truncated]`, truncated: true };
+  if (text === null || text === undefined)
+    return { text: "", truncated: false };
+  const str = typeof text === "string" ? text : String(text);
+  if (str.length <= maxChars)
+    return { text: str, truncated: false };
+  return { text: `${str.slice(0, maxChars)} […truncated]`, truncated: true };
 }
 function reviewComposite2(scores) {
   const clamp01 = (v) => Math.min(1, Math.max(0, v));
@@ -9429,7 +9504,19 @@ ${testsTrunc.text}`;
   const testGap = parseScore(ans.test_gap, 2);
   const blastRadius = parseScore(ans.blast_radius, 2);
   const safeToApply = ans.safe_to_apply?.noul ?? 0;
-  const minConf = Math.min(ans.correctness?.confidence ?? (ans.correctness?.noul !== undefined ? 0.8 : 1), ans.spec_match?.confidence ?? (ans.spec_match?.noul !== undefined ? 0.8 : 1), ans.test_gap?.confidence ?? (ans.test_gap?.noul !== undefined ? 0.8 : 1), ans.blast_radius?.confidence ?? (ans.blast_radius?.noul !== undefined ? 0.8 : 1));
+  const getConf = (ansObj, def = 0.8) => {
+    if (!ansObj || typeof ansObj !== "object")
+      return def;
+    const rec = ansObj;
+    if (typeof rec.answer_confidence === "number")
+      return rec.answer_confidence;
+    if (typeof rec.confidence === "number")
+      return rec.confidence;
+    if (typeof rec.noul === "number")
+      return rec.noul;
+    return def;
+  };
+  const minConf = Math.min(getConf(ans.correctness, 1), getConf(ans.spec_match, 1), getConf(ans.test_gap, 1), getConf(ans.blast_radius, 1));
   const composite = reviewComposite2({
     correctness,
     specMatch,
@@ -9628,11 +9715,10 @@ ${input.context}` : "");
   }
   const risk_score = Math.round(rawRisk * 100) / 100;
   const touches_prod = (prodAns?.noul ?? 0) >= 0.5;
-  if (recAns?.choice === "allow" || recAns?.choice === "block") {
-    recommendation = recAns.choice;
-  } else if (risk_score >= 2.5 || touches_prod && risk_score >= 2) {
+  const chosen = recAns?.choice;
+  if (risk_score >= 2.5 || touches_prod && risk_score >= 1.6 || chosen === "block") {
     recommendation = "block";
-  } else if (risk_score >= 1.5 || touches_prod) {
+  } else if (risk_score >= 1.5 || touches_prod || chosen === "confirm") {
     recommendation = "confirm";
   } else {
     recommendation = "allow";
@@ -9759,11 +9845,14 @@ Fast, calibrated decision model runner for coding gating, diff reviews, research
   -q, --question <text>      Yes/No question to answer
   -c, --choice <options>     Comma-separated list of choice options (e.g. "bug,feature,docs")
   --score <levels>           Comma-separated rating scale (e.g. "trivial,minor,major,critical")
-  --questions <json|file>    Multi-question JSON string or path to JSON rubric file
+  --questions <json>          Multi-question JSON string or rubric
+  --questions-file <path>     Read questions JSON from file
   --request <text>           Task specification / ticket description for review/gate
-  --evidence <file|text>     Evidence log / test runner output for gate
+  --evidence <text>          Evidence log / test runner output for gate (use @path for file)
+  --evidence-file <path>     Read evidence log directly from file
   --claim <claim>            Claim to verify in gate (can be repeated)
-  --timeout <ms>             Request timeout in milliseconds (default: 20000)
+  --timeout <ms>             Request timeout in milliseconds (default: 35000)
+  --laya                     Convenience flag for local Laya engine (http://127.0.0.1:20130)
   --json                     Output result as formatted JSON to stdout
   --raw                      Output raw unformatted JSON
   --quiet                    Output only the bare verdict (e.g. "true", "auto", "0.95")
@@ -9809,6 +9898,7 @@ async function main() {
   let choice;
   let score;
   let questionsArg;
+  let questionInput;
   let filePath;
   let requestText;
   let evidenceText;
@@ -9829,12 +9919,20 @@ async function main() {
     const arg = filteredArgs[i];
     if (arg === "-s" || arg === "--state") {
       state = filteredArgs[++i];
-    } else if (arg === "-f" || arg === "--file" || arg === "--diff") {
+    } else if (arg === "-f" || arg === "--file") {
+      filePath = filteredArgs[++i];
+    } else if (arg === "--diff") {
       const val = filteredArgs[++i];
-      if (fs3.existsSync(val)) {
+      if (val === "-") {
+        useStdin = true;
+      } else if (fs3.existsSync(val)) {
         filePath = val;
-      } else {
+      } else if (val && (val.includes(`
+`) || val.startsWith("diff --git") || val.startsWith("Index: ") || val.startsWith("--- "))) {
         state = val;
+      } else {
+        console.error(`\x1B[31mError: Diff file not found: ${val}\x1B[0m`);
+        process.exit(1);
       }
     } else if (arg === "-q" || arg === "--question") {
       question = filteredArgs[++i];
@@ -9848,11 +9946,46 @@ async function main() {
       requestText = filteredArgs[++i];
     } else if (arg === "--evidence") {
       const ev = filteredArgs[++i];
-      if (fs3.existsSync(ev)) {
+      if (ev.startsWith("@")) {
+        const evPath = ev.slice(1);
+        if (!fs3.existsSync(evPath)) {
+          console.error(`\x1B[31mError: Evidence file not found: ${evPath}\x1B[0m`);
+          process.exit(1);
+        }
+        evidenceText = fs3.readFileSync(evPath, "utf8");
+      } else if (fs3.existsSync(ev)) {
         evidenceText = fs3.readFileSync(ev, "utf8");
+      } else if (ev && (ev.endsWith(".log") || ev.endsWith(".txt") || ev.endsWith(".json") || ev.includes("/") || ev.includes("\\"))) {
+        console.error(`\x1B[31mError: Evidence file not found: ${ev}\x1B[0m`);
+        process.exit(1);
       } else {
         evidenceText = ev;
       }
+    } else if (arg === "--evidence-file") {
+      const evPath = filteredArgs[++i];
+      if (!fs3.existsSync(evPath)) {
+        console.error(`\x1B[31mError: Evidence file not found: ${evPath}\x1B[0m`);
+        process.exit(1);
+      }
+      evidenceText = fs3.readFileSync(evPath, "utf8");
+    } else if (arg === "--questions-file") {
+      const qPath = filteredArgs[++i];
+      if (!fs3.existsSync(qPath)) {
+        console.error(`\x1B[31mError: Questions file not found: ${qPath}\x1B[0m`);
+        process.exit(1);
+      }
+      try {
+        questionInput = JSON.parse(fs3.readFileSync(qPath, "utf8"));
+      } catch (err) {
+        console.error(`\x1B[31mError parsing questions JSON file: ${String(err)}\x1B[0m`);
+        process.exit(1);
+      }
+    } else if (arg === "--laya") {
+      explicitModel = "laya";
+      if (!explicitBaseUrl)
+        explicitBaseUrl = "http://127.0.0.1:20130/v1";
+      if (!explicitApiKey)
+        explicitApiKey = "none";
     } else if (arg === "--claim") {
       claims.push(filteredArgs[++i]);
     } else if (arg === "--json") {
@@ -9925,10 +10058,26 @@ async function main() {
     process.exit(0);
   }
   if (subCommand === "review") {
-    const diff = state || positional[0];
-    const req = requestText || positional[1] || "Review code patch for correctness, security, and quality";
+    let diff = state;
+    let req = requestText;
+    if (!diff && positional.length > 0) {
+      const pos = positional[0];
+      if (pos === "-") {
+        diff = await readStdin();
+      } else if (fs3.existsSync(pos)) {
+        diff = fs3.readFileSync(pos, "utf8");
+      } else if (pos.includes(`
+`) || pos.startsWith("diff --git") || pos.startsWith("Index: ") || pos.startsWith("--- ")) {
+        diff = pos;
+      } else {
+        console.error(`\x1B[31mError: Diff file not found: ${pos}\x1B[0m`);
+        process.exit(1);
+      }
+      req = req || positional[1];
+    }
+    req = req || "Review code patch for correctness, security, and quality";
     if (!diff) {
-      console.error("\x1B[31mError: Missing diff for review. Pipe via --stdin or provide --file.\x1B[0m");
+      console.error("\x1B[31mError: Missing diff for review. Pipe via --stdin, pass as positional argument, or provide --file.\x1B[0m");
       process.exit(1);
     }
     const res = await reviewDiff2({ diff, request: req }, { options: clientOptions });
@@ -9948,11 +10097,27 @@ async function main() {
     process.exit(res.action === "escalate" ? 1 : 0);
   }
   if (subCommand === "gate") {
-    const diff = state || positional[0];
-    const req = requestText || positional[1] || "Verify acceptance criteria";
-    const evidence = evidenceText || positional[2] || "";
+    let diff = state;
+    let req = requestText;
+    if (!diff && positional.length > 0) {
+      const pos = positional[0];
+      if (pos === "-") {
+        diff = await readStdin();
+      } else if (fs3.existsSync(pos)) {
+        diff = fs3.readFileSync(pos, "utf8");
+      } else if (pos.includes(`
+`) || pos.startsWith("diff --git") || pos.startsWith("Index: ") || pos.startsWith("--- ")) {
+        diff = pos;
+      } else {
+        console.error(`\x1B[31mError: Diff file not found: ${pos}\x1B[0m`);
+        process.exit(1);
+      }
+      req = req || positional[1];
+    }
+    req = req || "Verify acceptance criteria";
+    const evidence = evidenceText || "";
     if (!diff) {
-      console.error("\x1B[31mError: Missing diff for gate. Pipe via --stdin or provide --file.\x1B[0m");
+      console.error("\x1B[31mError: Missing diff for gate. Pipe via --stdin, pass as positional argument, or provide --file.\x1B[0m");
       process.exit(1);
     }
     const res = await gatePatch2({ diff, request: req, claims, evidence }, { options: clientOptions });
@@ -9983,35 +10148,58 @@ async function main() {
     console.error("\x1B[31mError: Missing state to evaluate. Use -s, -f, or --stdin.\x1B[0m");
     process.exit(1);
   }
-  let questionInput = "Is this true and valid?";
-  if (questionsArg) {
-    if (fs3.existsSync(questionsArg)) {
-      questionInput = JSON.parse(fs3.readFileSync(questionsArg, "utf8"));
-    } else {
-      try {
-        questionInput = JSON.parse(questionsArg);
-      } catch {
-        questionInput = questionsArg;
+  if (!questionInput) {
+    if (questionsArg) {
+      if (questionsArg.startsWith("@")) {
+        const qPath = questionsArg.slice(1);
+        if (!fs3.existsSync(qPath)) {
+          console.error(`\x1B[31mError: Questions file not found: ${qPath}\x1B[0m`);
+          process.exit(1);
+        }
+        try {
+          questionInput = JSON.parse(fs3.readFileSync(qPath, "utf8"));
+        } catch (err) {
+          console.error(`\x1B[31mError parsing questions JSON file: ${String(err)}\x1B[0m`);
+          process.exit(1);
+        }
+      } else if (fs3.existsSync(questionsArg)) {
+        try {
+          questionInput = JSON.parse(fs3.readFileSync(questionsArg, "utf8"));
+        } catch (err) {
+          console.error(`\x1B[31mError parsing questions JSON file: ${String(err)}\x1B[0m`);
+          process.exit(1);
+        }
+      } else if (questionsArg.endsWith(".json") || questionsArg.includes("/") || questionsArg.includes("\\")) {
+        console.error(`\x1B[31mError: Questions file not found: ${questionsArg}\x1B[0m`);
+        process.exit(1);
+      } else {
+        try {
+          questionInput = JSON.parse(questionsArg);
+        } catch {
+          questionInput = questionsArg;
+        }
       }
+    } else if (choice) {
+      const options = choice.split(",").map((s) => s.trim()).filter(Boolean);
+      questionInput = {
+        type: "choice",
+        instructions: question || "Choose the best option:",
+        options
+      };
+    } else if (score) {
+      const levels = score.split(",").map((s) => s.trim()).filter(Boolean);
+      questionInput = {
+        type: "score",
+        instructions: question || "Rate the level:",
+        levels
+      };
+    } else if (question) {
+      questionInput = question;
+    } else {
+      questionInput = "Is this true and valid?";
     }
-  } else if (choice) {
-    const options = choice.split(",").map((s) => s.trim()).filter(Boolean);
-    questionInput = {
-      type: "choice",
-      instructions: question || "Choose the best option:",
-      options
-    };
-  } else if (score) {
-    const levels = score.split(",").map((s) => s.trim()).filter(Boolean);
-    questionInput = {
-      type: "score",
-      instructions: question || "Rate the level:",
-      levels
-    };
-  } else if (question) {
-    questionInput = question;
   }
-  const res = await judge(state, questionInput, clientOptions);
+  const res = await judge(state, questionInput || "Is this true and valid?", clientOptions);
   if (rawOutput) {
     console.log(JSON.stringify(res.raw));
     process.exit(0);
