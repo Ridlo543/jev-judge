@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="Ridlo543/jev-judge"
+REPO="Ridlo543/systemone-judge"
 INSTALL_DIR="${HOME}/.local/bin"
 
 echo "=== Installing systemone (Universal Decision Runner & MCP) ==="
@@ -33,7 +33,7 @@ case "$OS" in
         MCP_ASSET="systemone-mcp-darwin-arm64"
         ;;
       *)
-        echo "Error: Intel macOS (x86_64) is not currently precompiled. Use 'npx -y github:Ridlo543/jev-judge'." >&2
+        echo "Error: Intel macOS (x86_64) is not currently precompiled. Use 'npx -y -p systemone-judge systemone'." >&2
         exit 1
         ;;
     esac

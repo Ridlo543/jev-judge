@@ -1,9 +1,9 @@
 # SystemOne: Universal Decision Model Runner & MCP Server
 
-[![Release](https://img.shields.io/github/v/release/Ridlo543/jev-judge?style=flat-square)](https://github.com/Ridlo543/jev-judge/releases)
+[![Release](https://img.shields.io/github/v/release/Ridlo543/systemone-judge?style=flat-square)](https://github.com/Ridlo543/systemone-judge/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20Linux%20%7C%20macOS-green?style=flat-square)](https://github.com/Ridlo543/jev-judge/releases)
-[![Tests](https://img.shields.io/badge/Tests-Passing%20(29%2F29)-brightgreen?style=flat-square)](https://github.com/Ridlo543/jev-judge/actions)
+[![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20Linux%20%7C%20macOS-green?style=flat-square)](https://github.com/Ridlo543/systemone-judge/releases)
+[![Tests](https://img.shields.io/badge/Tests-Passing%20(29%2F29)-brightgreen?style=flat-square)](https://github.com/Ridlo543/systemone-judge/actions)
 
 Model Context Protocol (MCP) server, CLI runner, and TypeScript SDK for **System One Decision Models** (**Laya**, **Jev**, and OpenAI-compatible engines). Built for Claude Code, Oh My Pi (OMP), Cursor, Windsurf, Cline, and terminal workflows.
 
@@ -31,12 +31,12 @@ No Node.js or Bun runtime required.
 
 **Linux & macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Ridlo543/jev-judge/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Ridlo543/systemone-judge/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/Ridlo543/jev-judge/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Ridlo543/systemone-judge/main/install.ps1 | iex
 ```
 
 ---
@@ -227,13 +227,12 @@ Settings resolve in order of precedence:
 
 ## 📦 Standalone Binaries
 
-Download precompiled standalone binaries from [GitHub Releases](https://github.com/Ridlo543/jev-judge/releases):
+Download precompiled standalone binaries from [GitHub Releases](https://github.com/Ridlo543/systemone-judge/releases):
 
-- **Windows x64:** `jev-windows-x64.exe` & `jev-mcp-windows-x64.exe`
-- **Linux x64:** `jev-linux-x64` & `jev-mcp-linux-x64`
-- **Linux arm64:** `jev-linux-arm64` & `jev-mcp-linux-arm64`
-- **macOS Apple Silicon (arm64):** `jev-darwin-arm64` & `jev-mcp-darwin-arm64`
-
+- **Windows x64:** `systemone-windows-x64.exe` & `systemone-mcp-windows-x64.exe` (aliases: `jev-windows-x64.exe`)
+- **Linux x64:** `systemone-linux-x64` & `systemone-mcp-linux-x64` (aliases: `jev-linux-x64`)
+- **Linux arm64:** `systemone-linux-arm64` & `systemone-mcp-linux-arm64`
+- **macOS Apple Silicon (arm64):** `systemone-darwin-arm64` & `systemone-mcp-darwin-arm64`
 ---
 
 ## 🧪 Verification & Testing

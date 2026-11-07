@@ -51,7 +51,15 @@
     "omp",
     "cursor"
   ],
-  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ridlo543/systemone-judge.git"
+  },
+  "homepage": "https://github.com/Ridlo543/systemone-judge#readme",
+  "bugs": {
+    "url": "https://github.com/Ridlo543/systemone-judge/issues"
+  },
+  "author": "Ridlo Abdullah Ulinnuha",
   "license": "MIT",
   "dependencies": {
     "zod": "^4.6.7"

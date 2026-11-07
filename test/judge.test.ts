@@ -12,7 +12,7 @@ const hasCredentials = Boolean(
 );
 const itLive = it.skipIf(!hasCredentials);
 
-describe("jev-judge client", () => {
+describe("systemone-judge client", () => {
   itLive("evaluates a simple yes/no question with calibrated probability", async () => {
     const res = await judge("The user typed: echo hello world", "Is this a harmless echo command?");
     expect(typeof res.verdict).toBe("boolean");

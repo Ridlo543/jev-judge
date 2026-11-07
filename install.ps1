@@ -1,7 +1,7 @@
-# PowerShell installation script for jev-judge on Windows
+# PowerShell installation script for systemone-judge on Windows
 $ErrorActionPreference = 'Stop'
 
-$Repo = "Ridlo543/jev-judge"
+$Repo = "Ridlo543/systemone-judge"
 $InstallDir = Join-Path $HOME "bin"
 
 Write-Host "=== Installing systemone (Universal Decision Runner & MCP) ===" -ForegroundColor Cyan
