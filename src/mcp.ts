@@ -128,7 +128,7 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
 export async function startMcpServer(): Promise<void> {
   const config = resolveConfig();
   console.error(
-    `[jev-mcp] Server running · endpoint=${config.baseUrl || "(unconfigured)"} · model=${config.model || "(unconfigured)"} · tools=${allTools.length}`,
+    `[systemone-mcp] Server running · endpoint=${config.baseUrl || "(unconfigured)"} · model=${config.model || "(unconfigured)"} · tools=${allTools.length}`,
   );
 
   let buffer = "";
@@ -155,7 +155,7 @@ export async function startMcpServer(): Promise<void> {
 
 if (process.argv[1]?.includes("mcp")) {
   startMcpServer().catch((err) => {
-    console.error("[jev-mcp] Fatal error:", err);
+    console.error("[systemone-mcp] Fatal error:", err);
     process.exit(1);
   });
 }

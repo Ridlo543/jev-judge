@@ -143,7 +143,7 @@ export async function rawJevJudgment(
         }
 
         throw new Error(
-          `Jev provider returned HTTP ${res.status} (${res.statusText}) at ${targetUrl}: ${
+          `SystemOne provider returned HTTP ${res.status} (${res.statusText}) at ${targetUrl}: ${
             errorText || "(empty body)"
           }`,
         );
@@ -154,7 +154,7 @@ export async function rawJevJudgment(
         rawJson = (await res.json()) as Record<string, unknown>;
       } catch (parseErr) {
         throw new Error(
-          `Jev provider returned invalid JSON (HTTP ${res.status}): ${String(parseErr)}`,
+          `SystemOne provider returned invalid JSON (HTTP ${res.status}): ${String(parseErr)}`,
         );
       }
       const durationMs = Math.round(performance.now() - t0);
@@ -201,7 +201,7 @@ export async function rawJevJudgment(
           if (parsed.model) returnedModel = parsed.model;
         } catch (err) {
           throw new Error(
-            `Failed to parse Jev JSON content: "${cleanContent.slice(0, 300)}" (${String(err)})`,
+            `Failed to parse SystemOne JSON content: "${cleanContent.slice(0, 300)}" (${String(err)})`,
           );
         }
 
@@ -218,7 +218,7 @@ export async function rawJevJudgment(
 
       if (!parsedAnswers || typeof parsedAnswers !== "object") {
         throw new Error(
-          `Jev response missing 'answers' object. Endpoint: ${targetUrl}, Protocol: ${protocol}`,
+          `SystemOne response missing 'answers' object. Endpoint: ${targetUrl}, Protocol: ${protocol}`,
         );
       }
 
@@ -245,7 +245,7 @@ export async function rawJevJudgment(
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         lastError = new Error(
-          `Jev request timed out after ${timeoutMs}ms (endpoint: ${targetUrl}, key: ${redactApiKey(
+          `SystemOne request timed out after ${timeoutMs}ms (endpoint: ${targetUrl}, key: ${redactApiKey(
             config.apiKey,
           )})`,
         );
@@ -279,7 +279,7 @@ export async function rawJevJudgment(
 
   throw (
     lastError ||
-    new Error(`Jev request failed after ${maxRetries + 1} attempts at ${targetUrl}`)
+    new Error(`SystemOne request failed after ${maxRetries + 1} attempts at ${targetUrl}`)
   );
 }
 

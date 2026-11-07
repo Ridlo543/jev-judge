@@ -69,14 +69,14 @@ jev "rm -rf /var/log/*" "Is this safe to run automatically?" --laya
 ```json
 {
   "mcpServers": {
-    "jev": {
+    "systemone": {
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "-p", "systemone-judge", "systemone-mcp"],
       "env": {
-        "JEV_BASE_URL": "https://router.ainything.online/v1",
-        "JEV_MODEL": "systemone",
-        "JEV_API_KEY": "${ROUTER_API_KEY}"
+        "SYSTEMONE_BASE_URL": "https://api.openai.com/v1",
+        "SYSTEMONE_MODEL": "systemone",
+        "SYSTEMONE_API_KEY": "${API_KEY}"
       }
     }
   }
@@ -160,27 +160,26 @@ jev -s "PostgreSQL connection pool exhausted" -c "network,database,client"
 
 ## 🛠️ Tool Reference
 
-By default, `jev-judge` exposes **8 core orthogonal tools** to eliminate cognitive ambiguity in agents:
+By default, `systemone` exposes **8 core orthogonal tools** to eliminate cognitive ambiguity in agents (with `action_gate` and legacy `jev_*` supported as aliases):
 
 | Tool | Category | Input | Output |
 |---|---|---|---|
-| `jev_action_gate` | Safety | Action + Context | `allow` \| `confirm` \| `block`, risk score ($0..3$), prod impact |
-| `jev_review` | Coding | Diff + Task (+ Claims) | Rubric scores ($0..2$), composite, safe-to-apply verdict |
-| `jev_screen` | Guardrails | Text content | Prompt injection / jailbreak flags, substance score |
-| `jev_decide` | Research | Candidates + Priorities | Best option, requirement matrix, escape hatches |
-| `jev_verify` | Verification | Claims + Evidence | Verified / Contradicted / Unsupported line-by-line audit |
-| `jev_compare` | Research | Two passages / docs | `same_fact` \| `contradicts` \| `different_facts` |
-| `jev_find` | Research | Query + Candidates | Top relevant candidate, `answered` \| `partial` \| `absent` |
-| `jev_judge` | Universal | State + Questions | Calibrated probabilities, choices, and rubric scores |
+| `systemone_action_gate` | Safety | Action + Context | `allow` \| `confirm` \| `block`, risk score ($0..3$), prod impact |
+| `systemone_review` | Coding | Diff + Task (+ Claims) | Rubric scores ($0..2$), composite, safe-to-apply verdict |
+| `systemone_screen` | Guardrails | Text content | Prompt injection / jailbreak flags, substance score |
+| `systemone_decide` | Research | Candidates + Priorities | Best option, requirement matrix, escape hatches |
+| `systemone_verify` | Verification | Claims + Evidence | Verified / Contradicted / Unsupported line-by-line audit |
+| `systemone_compare` | Research | Two passages / docs | `same_fact` \| `contradicts` \| `different_facts` |
+| `systemone_find` | Research | Query + Candidates | Top relevant candidate, `answered` \| `partial` \| `absent` |
+| `systemone_judge` | Universal | State + Questions | Calibrated probabilities, choices, and rubric scores |
 
-*(Set `JEV_TOOLS="all"` in environment to expose the extended 14-tool surface including regex field extractors).*
+*(Set `SYSTEMONE_TOOLS="all"` in environment to expose the extended 14-tool surface including regex field extractors).*
 
 ---
 
 ## 📊 Formatter Output Examples
 
-### `jev_review`
-```markdown
+### `systemone_review`
 ### 🔍 Diff Review: 🟢 AUTO (Composite: 0.88 / 1.0)
 
 - **Safe to Apply:** `true`
@@ -194,8 +193,7 @@ By default, `jev-judge` exposes **8 core orthogonal tools** to eliminate cogniti
 | **Blast Radius** |    `0.30`    |
 ```
 
-### `jev_action_gate`
-```markdown
+### `systemone_action_gate`
 ### 🛡️ Action Safety Gate: 🛑 BLOCK (Risk: 2.85 / 3.0)
 
 - **Action/Command:** `rm -rf / --no-preserve-root`
@@ -218,12 +216,12 @@ Settings resolve in order of precedence:
 
 | Environment Variable | Description | Default |
 |---|---|---|
-| `JEV_BASE_URL` | Endpoint URL | `http://127.0.0.1:20130/v1` (if `--laya`), else required |
-| `JEV_MODEL` | Model ID (`systemone`, `jev-1.13`, `laya`) | `laya` (if `--laya`), else required |
-| `JEV_API_KEY` | Provider API Key | `none` (if `--laya`), else required |
-| `JEV_PROTOCOL` | `chat-completions` or `typesafe-direct` | `chat-completions` |
-| `JEV_TIMEOUT_MS` | Request timeout in ms | `35000` |
-| `JEV_TOOLS` | Tool surface (`core` or `all`) | `core` |
+| `SYSTEMONE_BASE_URL` | Endpoint URL | `http://127.0.0.1:20130/v1` (if `--laya`), else required |
+| `SYSTEMONE_MODEL` | Model ID (`systemone`, `laya`, `jev-latest`) | `laya` (if `--laya`), else required |
+| `SYSTEMONE_API_KEY` | Provider API Key | `none` (if `--laya`), else required |
+| `SYSTEMONE_PROTOCOL` | `chat-completions` or `typesafe-direct` | `chat-completions` |
+| `SYSTEMONE_TIMEOUT_MS` | Request deadline in milliseconds | `35000` |
+| `SYSTEMONE_TOOLS` | Exposed tool surface: `core` (8 tools) or `all` (14 tools) | `core` |
 
 ---
 

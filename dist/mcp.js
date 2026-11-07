@@ -955,13 +955,13 @@ async function rawJevJudgment(state, questions, options = {}) {
           await sleep(delay);
           continue;
         }
-        throw new Error(`Jev provider returned HTTP ${res.status} (${res.statusText}) at ${targetUrl}: ${errorText || "(empty body)"}`);
+        throw new Error(`SystemOne provider returned HTTP ${res.status} (${res.statusText}) at ${targetUrl}: ${errorText || "(empty body)"}`);
       }
       let rawJson;
       try {
         rawJson = await res.json();
       } catch (parseErr) {
-        throw new Error(`Jev provider returned invalid JSON (HTTP ${res.status}): ${String(parseErr)}`);
+        throw new Error(`SystemOne provider returned invalid JSON (HTTP ${res.status}): ${String(parseErr)}`);
       }
       const durationMs = Math.round(performance.now() - t0);
       let parsedAnswers = null;
@@ -990,7 +990,7 @@ async function rawJevJudgment(state, questions, options = {}) {
           if (parsed.model)
             returnedModel = parsed.model;
         } catch (err) {
-          throw new Error(`Failed to parse Jev JSON content: "${cleanContent.slice(0, 300)}" (${String(err)})`);
+          throw new Error(`Failed to parse SystemOne JSON content: "${cleanContent.slice(0, 300)}" (${String(err)})`);
         }
         const rawUsage = rawJson.usage;
         if (rawUsage) {
@@ -1002,7 +1002,7 @@ async function rawJevJudgment(state, questions, options = {}) {
           returnedModel = rawJson.model;
       }
       if (!parsedAnswers || typeof parsedAnswers !== "object") {
-        throw new Error(`Jev response missing 'answers' object. Endpoint: ${targetUrl}, Protocol: ${protocol}`);
+        throw new Error(`SystemOne response missing 'answers' object. Endpoint: ${targetUrl}, Protocol: ${protocol}`);
       }
       for (const key of Object.keys(parsedAnswers)) {
         const ans = parsedAnswers[key];
@@ -1023,7 +1023,7 @@ async function rawJevJudgment(state, questions, options = {}) {
       };
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        lastError = new Error(`Jev request timed out after ${timeoutMs}ms (endpoint: ${targetUrl}, key: ${redactApiKey(config.apiKey)})`);
+        lastError = new Error(`SystemOne request timed out after ${timeoutMs}ms (endpoint: ${targetUrl}, key: ${redactApiKey(config.apiKey)})`);
       } else {
         const errStr = String(err);
         if (errStr.includes("ECONNREFUSED") || errStr.includes("connection refused") || errStr.includes("connect ECONNREFUSED")) {
@@ -1048,7 +1048,7 @@ async function rawJevJudgment(state, questions, options = {}) {
       clearTimeout(timer);
     }
   }
-  throw lastError || new Error(`Jev request failed after ${maxRetries + 1} attempts at ${targetUrl}`);
+  throw lastError || new Error(`SystemOne request failed after ${maxRetries + 1} attempts at ${targetUrl}`);
 }
 function normalizeQuestion(input) {
   if (typeof input === "string") {
@@ -1660,11 +1660,11 @@ ${input.context}` : "");
   };
 }
 var jevReviewTool = {
-  name: "jev_review",
-  aliases: ["jev_review_patch"],
+  name: "systemone_review",
+  aliases: ["jev_review", "jev_review_patch", "review_diff", "review"],
   description: `Score a proposed git diff / patch against the task request without confirmation bias, with optional Definition-of-Done claim verification.
 ` + `USE WHEN: Reviewing code changes during implementation to evaluate correctness, specification conformance, test coverage gaps, and blast radius.
-` + `DO NOT USE WHEN: You have no code diff to review (use jev_verify for pure text claims, or jev_action_gate for shell commands).
+` + `DO NOT USE WHEN: You have no code diff to review (use systemone_verify for pure text claims, or systemone_action_gate for shell commands).
 ` + "RETURNS: Rubric scores (0..2), composite score (0..1), safe_to_apply probability, action (auto | review | escalate), and claim verdicts if claims are provided.",
   inputSchema: {
     type: "object",
@@ -1697,11 +1697,11 @@ var jevReviewTool = {
   }
 };
 var jevGateTool = {
-  name: "jev_gate",
-  aliases: ["jev_gate_acceptance"],
+  name: "systemone_gate",
+  aliases: ["jev_gate", "jev_gate_acceptance", "gate_patch", "gate"],
   description: `Final acceptance gate before declaring a task done: reviews patch diff AND audits developer completion claims against evidence logs.
 ` + `USE WHEN: Calling a feature done, closing an issue, or finalizing a PR (Definition of Done) to eliminate fake-done claims.
-` + `DO NOT USE WHEN: Only inspecting an intermediate diff without test runner logs or completion claims (use jev_review).
+` + `DO NOT USE WHEN: Only inspecting an intermediate diff without test runner logs or completion claims (use systemone_review).
 ` + "RETURNS: Review scores and claim verdicts (verified | contradicted | unsupported). Strictly escalates if any claim is contradicted.",
   inputSchema: {
     type: "object",
@@ -1729,11 +1729,11 @@ var jevGateTool = {
   }
 };
 var jevActionGateTool = {
-  name: "jev_action_gate",
-  aliases: ["jev_screen_command", "jev_gate_command"],
+  name: "systemone_action_gate",
+  aliases: ["jev_action_gate", "action_gate", "screen_action", "jev_gate_command"],
   description: `Pre-execution safety screening before running autonomous shell commands or file operations.
 ` + `USE WHEN: About to execute a potentially destructive or state-changing action in the terminal (e.g. rm, drop, git reset --hard, curl, alter, overwrite).
-` + `DO NOT USE WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files) or for reviewing code diffs (use jev_review).
+` + `DO NOT USE WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files) or for reviewing code diffs (use systemone_review).
 ` + "RETURNS: Risk score (0..3), touches_prod boolean, and recommendation (allow | confirm | block).",
   inputSchema: {
     type: "object",
@@ -2121,11 +2121,11 @@ ${source}`;
   };
 }
 var jevVerifyTool = {
-  name: "jev_verify",
-  aliases: ["jev_verify_citations", "jev_fact_check_citations"],
+  name: "systemone_verify",
+  aliases: ["jev_verify", "jev_verify_citations", "jev_fact_check_citations", "verify"],
   description: `Test factual claims line-by-line against cited evidence documents with calibrated confidence.
 ` + `USE WHEN: A research brief, PR description, or summary makes factual assertions that must be checked against raw evidence text (eliminates LLM confirmation bias and hallucinations).
-` + `DO NOT USE WHEN: You have a code diff / git patch to review (use jev_review or jev_gate).
+` + `DO NOT USE WHEN: You have a code diff / git patch to review (use systemone_review or systemone_gate).
 ` + "RETURNS: Per-claim verdicts (verified | contradicted | unsupported), confidence, and same_subject checks.",
   inputSchema: {
     type: "object",
@@ -2148,11 +2148,11 @@ var jevVerifyTool = {
   }
 };
 var jevScreenTool = {
-  name: "jev_screen",
-  aliases: ["jev_screen_content"],
+  name: "systemone_screen",
+  aliases: ["jev_screen", "jev_screen_content", "screen", "screen_text"],
   description: `Screen fetched, pasted, or untrusted text before placing it into the agent context window.
 ` + `USE WHEN: Incorporating external text (web scrapings, issue comments, user pastes) to detect prompt injection, jailbreaks, hidden instructions, and check task relevance.
-` + `DO NOT USE WHEN: Screening terminal shell commands before execution (use jev_action_gate).
+` + `DO NOT USE WHEN: Screening terminal shell commands before execution (use systemone_action_gate).
 ` + "RETURNS: Probabilities for prompt injection, substance, relevance, and action (pass | review | block | skip).",
   inputSchema: {
     type: "object",
@@ -2170,11 +2170,11 @@ var jevScreenTool = {
   }
 };
 var jevExtractTool = {
-  name: "jev_extract",
-  aliases: ["jev_extract_fields"],
-  description: `Pull field values verbatim from document text: regex proposes candidates, Jev selects the true match.
+  name: "systemone_extract",
+  aliases: ["jev_extract", "jev_extract_fields", "extract"],
+  description: `Pull field values verbatim from document text: regex proposes candidates, SystemOne selects the true match.
 ` + `USE WHEN: Parsing raw text documents (invoices, logs, configs) to extract specific values (versions, IDs, metrics) without LLM hallucination.
-` + `DO NOT USE WHEN: Evaluating code logic or reviewing diffs (use jev_review).
+` + `DO NOT USE WHEN: Evaluating code logic or reviewing diffs (use systemone_review).
 ` + "RETURNS: Verbatim extracted substrings (never generated text) and status (auto | review | not_found).",
   inputSchema: {
     type: "object",
@@ -2203,11 +2203,11 @@ var jevExtractTool = {
   }
 };
 var jevAuditTool = {
-  name: "jev_audit",
-  aliases: ["jev_audit_records"],
+  name: "systemone_audit",
+  aliases: ["jev_audit", "jev_audit_records", "audit"],
   description: `Audit model-extracted records against the source document to detect hallucinated, off-target, or incomplete values.
 ` + `USE WHEN: Quality-checking structured key-value data extracted from documents before persisting or acting on it.
-` + `DO NOT USE WHEN: Checking code patch quality (use jev_review) or verifying claims against citations (use jev_verify).
+` + `DO NOT USE WHEN: Checking code patch quality (use systemone_review) or verifying claims against citations (use systemone_verify).
 ` + "RETURNS: Action (pass | review | escalate) and failure mode probabilities (hallucinated, off_target, incomplete).",
   inputSchema: {
     type: "object",
@@ -2290,11 +2290,11 @@ ${truncate2(input.context, 1e5).text}` : "Evaluate based on general facts, logic
   };
 }
 var jevJudgeTool = {
-  name: "jev_judge",
-  aliases: ["jev_decision_primitive"],
-  description: `Universal flexible TypeSafe Jev decision primitive for boolean propositions, multi-choice, or ordinal scoring.
+  name: "systemone_judge",
+  aliases: ["jev_judge", "jev_decision_primitive", "judge"],
+  description: `Universal flexible System One decision primitive for boolean propositions, multi-choice, or ordinal scoring.
 ` + `USE WHEN: You need an open-ended calibrated judgment, custom question rubric, or multi-criteria decision not covered by domain tools.
-` + `DO NOT USE WHEN: A specialized tool exists (use jev_review for code diffs, jev_action_gate for shell commands, jev_verify for text citations).
+` + `DO NOT USE WHEN: A specialized tool exists (use systemone_review for code diffs, systemone_action_gate for shell commands, systemone_verify for text citations).
 ` + "RETURNS: Typed verdicts, calibrated probabilities (0.0 to 1.0), and confidence scores.",
   inputSchema: {
     type: "object",
@@ -2321,10 +2321,11 @@ var jevJudgeTool = {
   }
 };
 var jevJudgeBatchTool = {
-  name: "jev_judge_batch",
+  name: "systemone_judge_batch",
+  aliases: ["jev_judge_batch", "judge_batch"],
   description: `Evaluate multiple independent items or requests concurrently with rate limiting and throughput control.
 ` + `USE WHEN: Processing a queue or list of independent questions/evaluations simultaneously in batch.
-` + `DO NOT USE WHEN: Evaluating a single situation or code snippet (use jev_judge).
+` + `DO NOT USE WHEN: Evaluating a single situation or code snippet (use systemone_judge).
 ` + "RETURNS: Array of item results with individual verdicts and calibrated probabilities.",
   inputSchema: {
     type: "object",
@@ -2354,11 +2355,11 @@ var jevJudgeBatchTool = {
   }
 };
 var jevNoulTool = {
-  name: "jev_noul",
-  aliases: ["jev_check_probability", "jev_truth_probability"],
+  name: "systemone_noul",
+  aliases: ["jev_noul", "jev_check_probability", "jev_truth_probability", "noul"],
   description: `Compute calibrated truth probability (0.0 to 1.0) for a list of simple propositions or hypotheses without custom rubrics.
 ` + `USE WHEN: You only have simple statements to test for truth probability without questions, criteria, or score levels.
-` + `DO NOT USE WHEN: You have cited evidence documents to fact-check against (use jev_verify) or complex rubrics (use jev_judge).
+` + `DO NOT USE WHEN: You have cited evidence documents to fact-check against (use systemone_verify) or complex rubrics (use systemone_judge).
 ` + "RETURNS: Probability per proposition (0.0 to 1.0) and likely / unlikely classification.",
   inputSchema: {
     type: "object",
@@ -2752,11 +2753,11 @@ ${passageBTrunc}`;
   };
 }
 var jevDecideTool = {
-  name: "jev_decide",
-  aliases: ["jev_decide_architecture", "jev_arbitrate_decision"],
+  name: "systemone_decide",
+  aliases: ["jev_decide", "jev_decide_architecture", "jev_arbitrate_decision", "decide"],
   description: `Arbitrate one bounded technical or architectural choice among 2-6 candidates with requirements, evidence, and priorities.
 ` + `USE WHEN: Choosing between 2-6 concrete design options, libraries, or architectural alternatives with trade-offs.
-` + `DO NOT USE WHEN: The question is a simple true/false or general rubric evaluation (use jev_judge).
+` + `DO NOT USE WHEN: The question is a simple true/false or general rubric evaluation (use systemone_judge).
 ` + "RETURNS: Selected candidate ID, confidence score, requirement checks, and escape hatches (ask_user, investigate, none).",
   inputSchema: {
     type: "object",
@@ -2782,11 +2783,11 @@ var jevDecideTool = {
   }
 };
 var jevFindTool = {
-  name: "jev_find",
-  aliases: ["jev_find_best", "jev_semantic_select"],
+  name: "systemone_find",
+  aliases: ["jev_find", "jev_find_best", "jev_semantic_select", "find_best", "find"],
   description: `Semantic search to pick the single best candidate from an array and determine if any candidate actually answers the query.
 ` + `USE WHEN: Picking the single best candidate among several choices (files, notes, code snippets) or verifying if a valid answer exists.
-` + `DO NOT USE WHEN: You need an entire list sorted and ranked by relevance (use jev_rerank), or when regex/grep search suffices.
+` + `DO NOT USE WHEN: You need an entire list sorted and ranked by relevance (use systemone_rerank), or when regex/grep search suffices.
 ` + "RETURNS: exists_verdict (answered | partial | absent) and top candidates ranked by calibrated probability.",
   inputSchema: {
     type: "object",
@@ -2804,11 +2805,11 @@ var jevFindTool = {
   }
 };
 var jevRerankTool = {
-  name: "jev_rerank",
-  aliases: ["jev_rerank_candidates", "jev_rank_relevance"],
+  name: "systemone_rerank",
+  aliases: ["jev_rerank", "jev_rerank_candidates", "jev_rank_relevance", "rerank"],
   description: `Score and rank an entire list of candidates by semantic relevance without an external vector database.
 ` + `USE WHEN: Full relevance ordering across all candidates is needed (retrieval ranking, search deduplication).
-` + `DO NOT USE WHEN: You only need the single best candidate or need to check if an answer exists (use jev_find).
+` + `DO NOT USE WHEN: You only need the single best candidate or need to check if an answer exists (use systemone_find).
 ` + "RETURNS: Complete ranked array of candidates with rank order and relevance scores (0.0 to 1.0).",
   inputSchema: {
     type: "object",
@@ -2826,11 +2827,11 @@ var jevRerankTool = {
   }
 };
 var jevCompareTool = {
-  name: "jev_compare",
-  aliases: ["jev_compare_passages"],
+  name: "systemone_compare",
+  aliases: ["jev_compare", "jev_compare_passages", "compare_passages", "compare"],
   description: `Judge how two text passages relate overall and per aspect (same_fact | contradicts | different_facts).
 ` + `USE WHEN: Comparing two documents, contract specs, or checking for contradictory factual statements across texts.
-` + `DO NOT USE WHEN: Reviewing a code diff or patch against requirements (use jev_review).
+` + `DO NOT USE WHEN: Reviewing a code diff or patch against requirements (use systemone_review).
 ` + "RETURNS: Overall relation verdict (same_fact | contradicts | different_facts), confidence, and per-aspect comparison breakdown.",
   inputSchema: {
     type: "object",
@@ -8876,7 +8877,7 @@ async function handleRequest(req) {
 }
 async function startMcpServer() {
   const config = resolveConfig();
-  console.error(`[jev-mcp] Server running · endpoint=${config.baseUrl || "(unconfigured)"} · model=${config.model || "(unconfigured)"} · tools=${allTools.length}`);
+  console.error(`[systemone-mcp] Server running · endpoint=${config.baseUrl || "(unconfigured)"} · model=${config.model || "(unconfigured)"} · tools=${allTools.length}`);
   let buffer = "";
   process.stdin.setEncoding("utf8");
   for await (const chunk of process.stdin) {
@@ -8899,7 +8900,7 @@ async function startMcpServer() {
 }
 if (process.argv[1]?.includes("mcp")) {
   startMcpServer().catch((err) => {
-    console.error("[jev-mcp] Fatal error:", err);
+    console.error("[systemone-mcp] Fatal error:", err);
     process.exit(1);
   });
 }

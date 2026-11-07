@@ -421,12 +421,12 @@ export async function screenAction(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const jevReviewTool: ToolDefinition = {
-  name: "jev_review",
-  aliases: ["jev_review_patch"],
+  name: "systemone_review",
+  aliases: ["jev_review", "jev_review_patch", "review_diff", "review"],
   description:
     "Score a proposed git diff / patch against the task request without confirmation bias, with optional Definition-of-Done claim verification.\n" +
     "USE WHEN: Reviewing code changes during implementation to evaluate correctness, specification conformance, test coverage gaps, and blast radius.\n" +
-    "DO NOT USE WHEN: You have no code diff to review (use jev_verify for pure text claims, or jev_action_gate for shell commands).\n" +
+    "DO NOT USE WHEN: You have no code diff to review (use systemone_verify for pure text claims, or systemone_action_gate for shell commands).\n" +
     "RETURNS: Rubric scores (0..2), composite score (0..1), safe_to_apply probability, action (auto | review | escalate), and claim verdicts if claims are provided.",
   inputSchema: {
     type: "object",
@@ -460,12 +460,12 @@ export const jevReviewTool: ToolDefinition = {
 };
 
 export const jevGateTool: ToolDefinition = {
-  name: "jev_gate",
-  aliases: ["jev_gate_acceptance"],
+  name: "systemone_gate",
+  aliases: ["jev_gate", "jev_gate_acceptance", "gate_patch", "gate"],
   description:
     "Final acceptance gate before declaring a task done: reviews patch diff AND audits developer completion claims against evidence logs.\n" +
     "USE WHEN: Calling a feature done, closing an issue, or finalizing a PR (Definition of Done) to eliminate fake-done claims.\n" +
-    "DO NOT USE WHEN: Only inspecting an intermediate diff without test runner logs or completion claims (use jev_review).\n" +
+    "DO NOT USE WHEN: Only inspecting an intermediate diff without test runner logs or completion claims (use systemone_review).\n" +
     "RETURNS: Review scores and claim verdicts (verified | contradicted | unsupported). Strictly escalates if any claim is contradicted.",
   inputSchema: {
     type: "object",
@@ -494,12 +494,12 @@ export const jevGateTool: ToolDefinition = {
 };
 
 export const jevActionGateTool: ToolDefinition = {
-  name: "jev_action_gate",
-  aliases: ["jev_screen_command", "jev_gate_command"],
+  name: "systemone_action_gate",
+  aliases: ["jev_action_gate", "action_gate", "screen_action", "jev_gate_command"],
   description:
     "Pre-execution safety screening before running autonomous shell commands or file operations.\n" +
     "USE WHEN: About to execute a potentially destructive or state-changing action in the terminal (e.g. rm, drop, git reset --hard, curl, alter, overwrite).\n" +
-    "DO NOT USE WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files) or for reviewing code diffs (use jev_review).\n" +
+    "DO NOT USE WHEN: The action is a routine read-only command (e.g. ls, cat, git status, reading files) or for reviewing code diffs (use systemone_review).\n" +
     "RETURNS: Risk score (0..3), touches_prod boolean, and recommendation (allow | confirm | block).",
   inputSchema: {
     type: "object",

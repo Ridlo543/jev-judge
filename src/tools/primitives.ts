@@ -81,12 +81,12 @@ export async function judgeNoul(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const jevJudgeTool: ToolDefinition = {
-  name: "jev_judge",
-  aliases: ["jev_decision_primitive"],
+  name: "systemone_judge",
+  aliases: ["jev_judge", "jev_decision_primitive", "judge"],
   description:
-    "Universal flexible TypeSafe Jev decision primitive for boolean propositions, multi-choice, or ordinal scoring.\n" +
+    "Universal flexible System One decision primitive for boolean propositions, multi-choice, or ordinal scoring.\n" +
     "USE WHEN: You need an open-ended calibrated judgment, custom question rubric, or multi-criteria decision not covered by domain tools.\n" +
-    "DO NOT USE WHEN: A specialized tool exists (use jev_review for code diffs, jev_action_gate for shell commands, jev_verify for text citations).\n" +
+    "DO NOT USE WHEN: A specialized tool exists (use systemone_review for code diffs, systemone_action_gate for shell commands, systemone_verify for text citations).\n" +
     "RETURNS: Typed verdicts, calibrated probabilities (0.0 to 1.0), and confidence scores.",
   inputSchema: {
     type: "object",
@@ -119,11 +119,12 @@ export const jevJudgeTool: ToolDefinition = {
 };
 
 export const jevJudgeBatchTool: ToolDefinition = {
-  name: "jev_judge_batch",
+  name: "systemone_judge_batch",
+  aliases: ["jev_judge_batch", "judge_batch"],
   description:
     "Evaluate multiple independent items or requests concurrently with rate limiting and throughput control.\n" +
     "USE WHEN: Processing a queue or list of independent questions/evaluations simultaneously in batch.\n" +
-    "DO NOT USE WHEN: Evaluating a single situation or code snippet (use jev_judge).\n" +
+    "DO NOT USE WHEN: Evaluating a single situation or code snippet (use systemone_judge).\n" +
     "RETURNS: Array of item results with individual verdicts and calibrated probabilities.",
   inputSchema: {
     type: "object",
@@ -157,12 +158,12 @@ export const jevJudgeBatchTool: ToolDefinition = {
 };
 
 export const jevNoulTool: ToolDefinition = {
-  name: "jev_noul",
-  aliases: ["jev_check_probability", "jev_truth_probability"],
+  name: "systemone_noul",
+  aliases: ["jev_noul", "jev_check_probability", "jev_truth_probability", "noul"],
   description:
     "Compute calibrated truth probability (0.0 to 1.0) for a list of simple propositions or hypotheses without custom rubrics.\n" +
     "USE WHEN: You only have simple statements to test for truth probability without questions, criteria, or score levels.\n" +
-    "DO NOT USE WHEN: You have cited evidence documents to fact-check against (use jev_verify) or complex rubrics (use jev_judge).\n" +
+    "DO NOT USE WHEN: You have cited evidence documents to fact-check against (use systemone_verify) or complex rubrics (use systemone_judge).\n" +
     "RETURNS: Probability per proposition (0.0 to 1.0) and likely / unlikely classification.",
   inputSchema: {
     type: "object",

@@ -30,8 +30,8 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
   };
 
   try {
-    console.log("\n\x1b[1m\x1b[36m=== Jev MCP Interactive Setup Wizard ===\x1b[0m");
-    console.log("Configure Jev Decision Model Runner for your agent without manual JSON editing.\n");
+    console.log("\n\x1b[1m\x1b[36m=== SystemOne MCP Interactive Setup Wizard ===\x1b[0m");
+    console.log("Configure System One Decision Model Runner for your agent without manual JSON editing.\n");
 
     // 1. Select Client Platform
     let client = options.client;
@@ -158,13 +158,13 @@ export async function runSetupWizard(options: SetupOptions = {}): Promise<void> 
       fs.writeFileSync(targetPath, JSON.stringify(existingConfig, null, 2) + "\n");
     }
 
-    console.log(`\n\x1b[32m✔ Success! Jev MCP configuration written to:\x1b[0m`);
+    console.log(`\n\x1b[32m✔ Success! SystemOne MCP configuration written to:\x1b[0m`);
     console.log(`  \x1b[1m${targetPath}\x1b[0m\n`);
     console.log(`Agent Platform: \x1b[36m${client.toUpperCase()}\x1b[0m`);
     console.log(`Endpoint:       \x1b[36m${baseUrl}\x1b[0m`);
     console.log(`Model:          \x1b[36m${model}\x1b[0m`);
     console.log(`API Key:        \x1b[36m${apiKey.slice(0, 4)}...${apiKey.slice(-4)}\x1b[0m\n`);
-    console.log("Your agent is ready to call Jev decision tools immediately!\n");
+    console.log("Your agent is ready to call SystemOne decision tools immediately!\n");
   } finally {
     rl?.close();
   }

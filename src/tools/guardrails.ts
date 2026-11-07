@@ -456,12 +456,12 @@ export async function auditRecords(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const jevVerifyTool: ToolDefinition = {
-  name: "jev_verify",
-  aliases: ["jev_verify_citations", "jev_fact_check_citations"],
+  name: "systemone_verify",
+  aliases: ["jev_verify", "jev_verify_citations", "jev_fact_check_citations", "verify"],
   description:
     "Test factual claims line-by-line against cited evidence documents with calibrated confidence.\n" +
     "USE WHEN: A research brief, PR description, or summary makes factual assertions that must be checked against raw evidence text (eliminates LLM confirmation bias and hallucinations).\n" +
-    "DO NOT USE WHEN: You have a code diff / git patch to review (use jev_review or jev_gate).\n" +
+    "DO NOT USE WHEN: You have a code diff / git patch to review (use systemone_review or systemone_gate).\n" +
     "RETURNS: Per-claim verdicts (verified | contradicted | unsupported), confidence, and same_subject checks.",
   inputSchema: {
     type: "object",
@@ -485,12 +485,12 @@ export const jevVerifyTool: ToolDefinition = {
 };
 
 export const jevScreenTool: ToolDefinition = {
-  name: "jev_screen",
-  aliases: ["jev_screen_content"],
+  name: "systemone_screen",
+  aliases: ["jev_screen", "jev_screen_content", "screen", "screen_text"],
   description:
     "Screen fetched, pasted, or untrusted text before placing it into the agent context window.\n" +
     "USE WHEN: Incorporating external text (web scrapings, issue comments, user pastes) to detect prompt injection, jailbreaks, hidden instructions, and check task relevance.\n" +
-    "DO NOT USE WHEN: Screening terminal shell commands before execution (use jev_action_gate).\n" +
+    "DO NOT USE WHEN: Screening terminal shell commands before execution (use systemone_action_gate).\n" +
     "RETURNS: Probabilities for prompt injection, substance, relevance, and action (pass | review | block | skip).",
   inputSchema: {
     type: "object",
@@ -509,12 +509,12 @@ export const jevScreenTool: ToolDefinition = {
 };
 
 export const jevExtractTool: ToolDefinition = {
-  name: "jev_extract",
-  aliases: ["jev_extract_fields"],
+  name: "systemone_extract",
+  aliases: ["jev_extract", "jev_extract_fields", "extract"],
   description:
-    "Pull field values verbatim from document text: regex proposes candidates, Jev selects the true match.\n" +
+    "Pull field values verbatim from document text: regex proposes candidates, SystemOne selects the true match.\n" +
     "USE WHEN: Parsing raw text documents (invoices, logs, configs) to extract specific values (versions, IDs, metrics) without LLM hallucination.\n" +
-    "DO NOT USE WHEN: Evaluating code logic or reviewing diffs (use jev_review).\n" +
+    "DO NOT USE WHEN: Evaluating code logic or reviewing diffs (use systemone_review).\n" +
     "RETURNS: Verbatim extracted substrings (never generated text) and status (auto | review | not_found).",
   inputSchema: {
     type: "object",
@@ -544,12 +544,12 @@ export const jevExtractTool: ToolDefinition = {
 };
 
 export const jevAuditTool: ToolDefinition = {
-  name: "jev_audit",
-  aliases: ["jev_audit_records"],
+  name: "systemone_audit",
+  aliases: ["jev_audit", "jev_audit_records", "audit"],
   description:
     "Audit model-extracted records against the source document to detect hallucinated, off-target, or incomplete values.\n" +
     "USE WHEN: Quality-checking structured key-value data extracted from documents before persisting or acting on it.\n" +
-    "DO NOT USE WHEN: Checking code patch quality (use jev_review) or verifying claims against citations (use jev_verify).\n" +
+    "DO NOT USE WHEN: Checking code patch quality (use systemone_review) or verifying claims against citations (use systemone_verify).\n" +
     "RETURNS: Action (pass | review | escalate) and failure mode probabilities (hallucinated, off_target, incomplete).",
   inputSchema: {
     type: "object",

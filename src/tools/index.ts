@@ -19,14 +19,14 @@ export const allTools: ToolDefinition[] = [
 
 /**
  * 8 Core Orthogonal Tools for LLM Coding Agents:
- * 1. jev_action_gate  - Terminal shell safety gate (allow | confirm | block)
- * 2. jev_screen       - Untrusted text / prompt injection screening
- * 3. jev_decide       - Architecture candidate arbitration (2-6 options)
- * 4. jev_verify       - Fact-checking & citation verification (claim vs evidence)
- * 5. jev_compare      - Passage / specification agreement & contradiction check
- * 6. jev_review       - Patch review + Final Definition-of-Done Gating (unified)
- * 7. jev_find         - Semantic search & candidate ranking (unified)
- * 8. jev_judge        - Universal decision & proposition probability primitive
+ * 1. systemone_action_gate  - Terminal shell safety gate (allow | confirm | block)
+ * 2. systemone_screen       - Untrusted text / prompt injection screening
+ * 3. systemone_decide       - Architecture candidate arbitration (2-6 options)
+ * 4. systemone_verify       - Fact-checking & citation verification (claim vs evidence)
+ * 5. systemone_compare      - Passage / specification agreement & contradiction check
+ * 6. systemone_review       - Patch review + Final Definition-of-Done Gating (unified)
+ * 7. systemone_find         - Semantic search & candidate ranking (unified)
+ * 8. systemone_judge        - Universal decision & proposition probability primitive
  */
 export const coreTools: ToolDefinition[] = [
   // 1. Coding & Terminal Safety
