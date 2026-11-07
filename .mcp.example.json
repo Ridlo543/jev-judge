@@ -1,12 +1,12 @@
 {
   "mcpServers": {
-    "jev": {
+    "systemone": {
       "command": "npx",
-      "args": ["-y", "jev-judge", "mcp"],
+      "args": ["-y", "-p", "systemone-judge", "systemone-mcp"],
       "env": {
-        "JEV_BASE_URL": "https://api.openai.com/v1",
-        "JEV_API_KEY": "your-api-key-here",
-        "JEV_MODEL": "jev-latest"
+        "SYSTEMONE_BASE_URL": "https://api.openai.com/v1",
+        "SYSTEMONE_API_KEY": "your-api-key-here",
+        "SYSTEMONE_MODEL": "systemone"
       }
     }
   }

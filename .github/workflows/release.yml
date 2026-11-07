@@ -17,16 +17,22 @@ jobs:
         include:
           - os: windows-latest
             target: windows-x64
-            cli_out: jev-windows-x64.exe
-            mcp_out: jev-mcp-windows-x64.exe
+            primary_cli: systemone-windows-x64.exe
+            primary_mcp: systemone-mcp-windows-x64.exe
+            legacy_cli: jev-windows-x64.exe
+            legacy_mcp: jev-mcp-windows-x64.exe
           - os: ubuntu-latest
             target: linux-x64
-            cli_out: jev-linux-x64
-            mcp_out: jev-mcp-linux-x64
+            primary_cli: systemone-linux-x64
+            primary_mcp: systemone-mcp-linux-x64
+            legacy_cli: jev-linux-x64
+            legacy_mcp: jev-mcp-linux-x64
           - os: macos-latest
             target: darwin-arm64
-            cli_out: jev-darwin-arm64
-            mcp_out: jev-mcp-darwin-arm64
+            primary_cli: systemone-darwin-arm64
+            primary_mcp: systemone-mcp-darwin-arm64
+            legacy_cli: jev-darwin-arm64
+            legacy_mcp: jev-mcp-darwin-arm64
 
     steps:
       - name: Checkout code
@@ -47,18 +53,22 @@ jobs:
         run: bun run build
 
       - name: Compile Standalone Binaries
+        shell: bash
         run: |
-          bun build --compile --outfile ${{ matrix.cli_out }} src/cli.ts
-          bun build --compile --outfile ${{ matrix.mcp_out }} src/mcp.ts
+          bun build --compile --outfile ${{ matrix.primary_cli }} src/cli.ts
+          bun build --compile --outfile ${{ matrix.primary_mcp }} src/mcp.ts
+          cp ${{ matrix.primary_cli }} ${{ matrix.legacy_cli }}
+          cp ${{ matrix.primary_mcp }} ${{ matrix.legacy_mcp }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.target }}
           path: |
-            ${{ matrix.cli_out }}
-            ${{ matrix.mcp_out }}
-
+            ${{ matrix.primary_cli }}
+            ${{ matrix.primary_mcp }}
+            ${{ matrix.legacy_cli }}
+            ${{ matrix.legacy_mcp }}
   publish-release:
     name: Publish GitHub Release
     needs: build

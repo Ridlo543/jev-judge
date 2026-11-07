@@ -15,11 +15,10 @@ $S1CliDest = Join-Path $InstallDir "systemone.exe"
 $S1McpDest = Join-Path $InstallDir "systemone-mcp.exe"
 
 Write-Host "Downloading systemone-windows-x64.exe -> $S1CliDest..."
-Invoke-WebRequest -Uri "$BaseUrl/jev-windows-x64.exe" -OutFile $S1CliDest -UseBasicParsing
+Invoke-WebRequest -Uri "$BaseUrl/systemone-windows-x64.exe" -OutFile $S1CliDest -UseBasicParsing
 
 Write-Host "Downloading systemone-mcp-windows-x64.exe -> $S1McpDest..."
-Invoke-WebRequest -Uri "$BaseUrl/jev-mcp-windows-x64.exe" -OutFile $S1McpDest -UseBasicParsing
-
+Invoke-WebRequest -Uri "$BaseUrl/systemone-mcp-windows-x64.exe" -OutFile $S1McpDest -UseBasicParsing
 # Create short alias 's1.exe' and backward-compatible 'jev.exe'
 Copy-Item -Path $S1CliDest -Destination (Join-Path $InstallDir "s1.exe") -Force
 Copy-Item -Path $S1CliDest -Destination (Join-Path $InstallDir "jev.exe") -Force
