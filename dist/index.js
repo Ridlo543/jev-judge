@@ -113,13 +113,13 @@ function resolveConfig(explicit = {}) {
 function requireConfig(explicit = {}) {
   const config = resolveConfig(explicit);
   if (!config.baseUrl) {
-    throw new Error("Missing Jev Base URL. Please configure it manually in your MCP config (env.JEV_BASE_URL or env.OPENAI_BASE_URL), in jev.config.json, pass --base-url, or use --laya for local server.");
+    throw new Error("Missing SystemOne Base URL. Please configure it manually in your MCP config (env.SYSTEMONE_BASE_URL or env.JEV_BASE_URL), in systemone.config.json, pass --base-url, or use --laya for local server.");
   }
   if (!config.apiKey) {
-    throw new Error("Missing Jev API Key. Please configure it manually in your MCP config (env.JEV_API_KEY or env.OPENAI_API_KEY), in jev.config.json, or pass --api-key.");
+    throw new Error("Missing SystemOne API Key. Please configure it manually in your MCP config (env.SYSTEMONE_API_KEY or env.JEV_API_KEY), in systemone.config.json, or pass --api-key.");
   }
   if (!config.model) {
-    throw new Error("Missing Jev Model. Please configure it manually in your MCP config (env.JEV_MODEL or env.OPENAI_MODEL), in jev.config.json, or pass --model.");
+    throw new Error("Missing SystemOne Model. Please configure it manually in your MCP config (env.SYSTEMONE_MODEL or env.JEV_MODEL), in systemone.config.json, or pass --model.");
   }
   return config;
 }
@@ -2123,14 +2123,14 @@ var allTools = [
   ...primitiveTools
 ];
 var coreTools = [
-  allTools.find((t) => t.name === "jev_action_gate"),
-  allTools.find((t) => t.name === "jev_screen"),
-  allTools.find((t) => t.name === "jev_decide"),
-  allTools.find((t) => t.name === "jev_verify"),
-  allTools.find((t) => t.name === "jev_compare"),
-  allTools.find((t) => t.name === "jev_review"),
-  allTools.find((t) => t.name === "jev_find"),
-  allTools.find((t) => t.name === "jev_judge")
+  allTools.find((t) => t.name === "systemone_action_gate" || t.name === "jev_action_gate"),
+  allTools.find((t) => t.name === "systemone_screen" || t.name === "jev_screen"),
+  allTools.find((t) => t.name === "systemone_decide" || t.name === "jev_decide"),
+  allTools.find((t) => t.name === "systemone_verify" || t.name === "jev_verify"),
+  allTools.find((t) => t.name === "systemone_compare" || t.name === "jev_compare"),
+  allTools.find((t) => t.name === "systemone_review" || t.name === "jev_review"),
+  allTools.find((t) => t.name === "systemone_find" || t.name === "jev_find"),
+  allTools.find((t) => t.name === "systemone_judge" || t.name === "jev_judge")
 ];
 var toolsByName = {};
 for (const tool of allTools) {
@@ -2141,14 +2141,25 @@ for (const tool of allTools) {
     }
   }
 }
-if (toolsByName.jev_review && !toolsByName.jev_gate) {
-  toolsByName.jev_gate = toolsByName.jev_review;
-}
-if (toolsByName.jev_find && !toolsByName.jev_rerank) {
-  toolsByName.jev_rerank = toolsByName.jev_find;
-}
-if (toolsByName.jev_judge && !toolsByName.jev_noul) {
-  toolsByName.jev_noul = toolsByName.jev_judge;
+for (const [s1Name, jevName, cleanName] of [
+  ["systemone_review", "jev_review", "review"],
+  ["systemone_gate", "jev_gate", "gate"],
+  ["systemone_action_gate", "jev_action_gate", "action_gate"],
+  ["systemone_decide", "jev_decide", "decide"],
+  ["systemone_verify", "jev_verify", "verify"],
+  ["systemone_screen", "jev_screen", "screen"],
+  ["systemone_compare", "jev_compare", "compare"],
+  ["systemone_find", "jev_find", "find"],
+  ["systemone_rerank", "jev_rerank", "rerank"],
+  ["systemone_judge", "jev_judge", "judge"],
+  ["systemone_noul", "jev_noul", "noul"]
+]) {
+  const tool = toolsByName[s1Name] || toolsByName[jevName];
+  if (tool) {
+    toolsByName[s1Name] = tool;
+    toolsByName[jevName] = tool;
+    toolsByName[cleanName] = tool;
+  }
 }
 export {
   ASPECT_RELATIONS,

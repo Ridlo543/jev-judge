@@ -428,6 +428,43 @@ export const judgeBatchSchema = z.object({
 });
 
 const SCHEMAS_BY_TOOL_NAME: Record<string, z.ZodTypeAny> = {
+  // SystemOne primary names
+  systemone_review: reviewSchema,
+  systemone_gate: gateSchema,
+  systemone_action_gate: actionGateSchema,
+  systemone_decide: decideSchema,
+  systemone_find: findSchema,
+  systemone_rerank: rerankSchema,
+  systemone_compare: compareSchema,
+  systemone_verify: verifySchema,
+  systemone_screen: screenSchema,
+  systemone_extract: extractSchema,
+  systemone_audit: auditSchema,
+  systemone_noul: noulSchema,
+  systemone_judge: judgeSchema,
+  systemone_judge_batch: judgeBatchSchema,
+
+  // Clean generic aliases
+  review: reviewSchema,
+  review_diff: reviewSchema,
+  gate: gateSchema,
+  action_gate: actionGateSchema,
+  screen_action: actionGateSchema,
+  decide: decideSchema,
+  find: findSchema,
+  find_best: findSchema,
+  rerank: rerankSchema,
+  compare: compareSchema,
+  verify: verifySchema,
+  screen: screenSchema,
+  screen_text: screenSchema,
+  extract: extractSchema,
+  audit: auditSchema,
+  judge: judgeSchema,
+  judge_batch: judgeBatchSchema,
+  noul: noulSchema,
+
+  // Legacy Jev aliases
   jev_review: reviewSchema,
   jev_review_patch: reviewSchema,
   jev_gate: gateSchema,

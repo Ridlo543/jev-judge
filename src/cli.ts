@@ -8,14 +8,15 @@ import { gatePatch, reviewDiff } from "./tools/coding";
 
 function printHelp(): void {
   console.log(`
-\x1b[1m\x1b[36mjev (Universal TypeSafe Jev Decision CLI)\x1b[0m
-Fast, calibrated decision model runner for coding gating, diff reviews, research decisions, and verification.
+\x1b[1m\x1b[36msystemone / s1 (Universal System One Decision Model CLI & MCP)\x1b[0m
+Fast, calibrated decision model runner (Laya, Jev, and OpenAI-Compatible) for coding gating, diff reviews, and verification.
 
 \x1b[1mUSAGE:\x1b[0m
-  jev <state> <question>                 Quick yes/no question
-  jev review --diff <file> --request <text>   Review git diff / patch quality
-  jev gate --diff <file> --request <text> --evidence <log> --claim <claim> Gating before done
-  jev [options]                          Advanced structured judgment
+  systemone <state> <question>                     Quick yes/no question
+  systemone review -f <file> --request <text>       Review git diff / patch quality
+  systemone gate -f <file> --evidence-file <log>   Gating before done (Anti-Fake Done)
+  systemone [options]                              Advanced structured judgment
+  (Aliases: 's1' and 'jev' are fully supported)
 
 \x1b[1mSUBCOMMANDS:\x1b[0m
   mcp                        Run as Model Context Protocol (MCP) JSON-RPC stdio server

@@ -1,11 +1,15 @@
 {
-  "name": "jev-judge",
-  "version": "1.0.18",
-  "description": "Universal TypeSafe Jev Decision Model Runner & MCP Server (OpenAI-Compatible & Direct)",
+  "name": "systemone",
+  "version": "1.0.0",
+  "description": "Universal System One Decision Model Runner & MCP Server (Laya, Jev, and OpenAI-Compatible)",
   "main": "dist/index.js",
   "module": "src/index.ts",
   "types": "src/index.ts",
   "bin": {
+    "systemone": "dist/cli.js",
+    "s1": "dist/cli.js",
+    "systemone-mcp": "dist/mcp.js",
+    "s1-mcp": "dist/mcp.js",
     "jev": "dist/cli.js",
     "jev-judge": "dist/cli.js",
     "jev-mcp": "dist/mcp.js"
@@ -14,6 +18,10 @@
   "files": [
     "dist",
     "src",
+    "systemone.cmd",
+    "s1.cmd",
+    "systemone-mcp.cmd",
+    "s1-mcp.cmd",
     "jev.cmd",
     "jev-mcp.cmd",
     "README.md",
@@ -30,14 +38,17 @@
     "compile:all": "bun scripts/compile.ts --all"
   },
   "keywords": [
-    "jev",
-    "decision-model",
     "system-one",
-    "typesafe",
+    "systemone",
+    "decision-model",
+    "laya",
+    "jev",
+    "llm-judge",
+    "mcp",
+    "model-context-protocol",
     "claude-code",
     "omp",
-    "cursor",
-    "mcp"
+    "cursor"
   ],
   "author": "",
   "license": "MIT",

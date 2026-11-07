@@ -18,34 +18,34 @@ function resolveJobs(): CompileJob[] {
 
   if (hasAll) {
     return [
-      { entry: "src/cli.ts", outfile: isWindows ? "jev.exe" : "jev" },
-      { entry: "src/mcp.ts", outfile: isWindows ? "jev-mcp.exe" : "jev-mcp" },
-      { entry: "src/cli.ts", outfile: "jev-linux-x64", bunTarget: "bun-linux-x64" },
-      { entry: "src/mcp.ts", outfile: "jev-mcp-linux-x64", bunTarget: "bun-linux-x64" },
-      { entry: "src/cli.ts", outfile: "jev-linux-arm64", bunTarget: "bun-linux-arm64" },
-      { entry: "src/mcp.ts", outfile: "jev-mcp-linux-arm64", bunTarget: "bun-linux-arm64" },
-      { entry: "src/cli.ts", outfile: "jev-darwin-arm64", bunTarget: "bun-darwin-arm64" },
-      { entry: "src/mcp.ts", outfile: "jev-mcp-darwin-arm64", bunTarget: "bun-darwin-arm64" },
+      { entry: "src/cli.ts", outfile: isWindows ? "systemone.exe" : "systemone" },
+      { entry: "src/mcp.ts", outfile: isWindows ? "systemone-mcp.exe" : "systemone-mcp" },
+      { entry: "src/cli.ts", outfile: "systemone-linux-x64", bunTarget: "bun-linux-x64" },
+      { entry: "src/mcp.ts", outfile: "systemone-mcp-linux-x64", bunTarget: "bun-linux-x64" },
+      { entry: "src/cli.ts", outfile: "systemone-linux-arm64", bunTarget: "bun-linux-arm64" },
+      { entry: "src/mcp.ts", outfile: "systemone-mcp-linux-arm64", bunTarget: "bun-linux-arm64" },
+      { entry: "src/cli.ts", outfile: "systemone-darwin-arm64", bunTarget: "bun-darwin-arm64" },
+      { entry: "src/mcp.ts", outfile: "systemone-mcp-darwin-arm64", bunTarget: "bun-darwin-arm64" },
     ];
   }
 
   if (hasLinux) {
     return [
-      { entry: "src/cli.ts", outfile: "jev-linux-x64", bunTarget: "bun-linux-x64" },
-      { entry: "src/mcp.ts", outfile: "jev-mcp-linux-x64", bunTarget: "bun-linux-x64" },
+      { entry: "src/cli.ts", outfile: "systemone-linux-x64", bunTarget: "bun-linux-x64" },
+      { entry: "src/mcp.ts", outfile: "systemone-mcp-linux-x64", bunTarget: "bun-linux-x64" },
     ];
   }
 
   if (hasDarwin) {
     return [
-      { entry: "src/cli.ts", outfile: "jev-darwin-arm64", bunTarget: "bun-darwin-arm64" },
-      { entry: "src/mcp.ts", outfile: "jev-mcp-darwin-arm64", bunTarget: "bun-darwin-arm64" },
+      { entry: "src/cli.ts", outfile: "systemone-darwin-arm64", bunTarget: "bun-darwin-arm64" },
+      { entry: "src/mcp.ts", outfile: "systemone-mcp-darwin-arm64", bunTarget: "bun-darwin-arm64" },
     ];
   }
 
   return [
-    { entry: "src/cli.ts", outfile: isWindows ? "jev.exe" : "jev" },
-    { entry: "src/mcp.ts", outfile: isWindows ? "jev-mcp.exe" : "jev-mcp" },
+    { entry: "src/cli.ts", outfile: isWindows ? "systemone.exe" : "systemone" },
+    { entry: "src/mcp.ts", outfile: isWindows ? "systemone-mcp.exe" : "systemone-mcp" },
   ];
 }
 
@@ -124,6 +124,57 @@ async function main(): Promise<void> {
     if (res.status !== 0) {
       console.error(`[compile] Compilation failed for ${job.outfile} with exit code ${res.status}`);
       process.exit(res.status ?? 1);
+    }
+  }
+
+  // Create backward-compatible aliases and short CLI names
+  const aliasPairs: [string, string][] = isWindows
+    ? [
+        ["systemone.exe", "s1.exe"],
+        ["systemone.exe", "jev.exe"],
+        ["systemone.exe", "jev-windows-x64.exe"],
+        ["systemone-mcp.exe", "s1-mcp.exe"],
+        ["systemone-mcp.exe", "jev-mcp.exe"],
+        ["systemone-mcp.exe", "jev-mcp-windows-x64.exe"],
+      ]
+    : [
+        ["systemone", "s1"],
+        ["systemone", "jev"],
+        ["systemone-mcp", "s1-mcp"],
+        ["systemone-mcp", "jev-mcp"],
+      ];
+
+  for (const [src, dest] of aliasPairs) {
+    const srcPath = path.resolve(rootDir, src);
+    const destPath = path.resolve(rootDir, dest);
+    if (fs.existsSync(srcPath)) {
+      prepareTarget(destPath);
+      try {
+        fs.copyFileSync(srcPath, destPath);
+      } catch (err) {
+        console.warn(`[compile] Warning copying alias '${dest}':`, err);
+      }
+    }
+  }
+
+  // Cross-platform release alias copies
+  for (const [src, dest] of [
+    ["systemone-linux-x64", "jev-linux-x64"],
+    ["systemone-mcp-linux-x64", "jev-mcp-linux-x64"],
+    ["systemone-linux-arm64", "jev-linux-arm64"],
+    ["systemone-mcp-linux-arm64", "jev-mcp-linux-arm64"],
+    ["systemone-darwin-arm64", "jev-darwin-arm64"],
+    ["systemone-mcp-darwin-arm64", "jev-mcp-darwin-arm64"],
+  ]) {
+    const srcPath = path.resolve(rootDir, src);
+    const destPath = path.resolve(rootDir, dest);
+    if (fs.existsSync(srcPath)) {
+      prepareTarget(destPath);
+      try {
+        fs.copyFileSync(srcPath, destPath);
+      } catch (err) {
+        console.warn(`[compile] Warning copying alias '${dest}':`, err);
+      }
     }
   }
 

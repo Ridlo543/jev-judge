@@ -229,10 +229,10 @@ export interface JevActionGateResult {
 
 /* Research Domain */
 export interface JevDecideInput {
-  decision: string;
-  candidates: Array<{ id: string; description: string }>;
-  evidence: string;
-  priorities: string;
+  decision?: string;
+  candidates: Array<{ id: string; description: string; [key: string]: unknown }>;
+  evidence?: string;
+  priorities?: string;
   requirements?: string[];
   escape_hatches?: boolean;
 }

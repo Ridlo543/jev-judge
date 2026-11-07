@@ -42,7 +42,7 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
         tools: {},
       },
       serverInfo: {
-        name: "jev",
+        name: "systemone",
         version: "1.0.0",
       },
     });
@@ -54,7 +54,7 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
   }
 
   if (method === "tools/list") {
-    const showAll = process.env.JEV_TOOLS === "all" || process.env.JEV_TOOLS === "14";
+    const showAll = process.env.SYSTEMONE_TOOLS === "all" || process.env.JEV_TOOLS === "all" || process.env.JEV_TOOLS === "14";
     const exposed = showAll ? allTools : coreTools;
     sendResult(id, {
       tools: exposed.map((t) => ({

@@ -31,6 +31,8 @@ jev-darwin-arm64
 jev-mcp-darwin-arm64
 jev-linux-arm64
 jev-mcp-linux-arm64
+systemone*
+s1*
 *.tar.gz
 # Operating System & IDE artifacts
 .codegraph/

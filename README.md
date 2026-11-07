@@ -1,11 +1,11 @@
-# Jev: Decision Model Runner & MCP Server
+# SystemOne: Universal Decision Model Runner & MCP Server
 
 [![Release](https://img.shields.io/github/v/release/Ridlo543/jev-judge?style=flat-square)](https://github.com/Ridlo543/jev-judge/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20Linux%20%7C%20macOS-green?style=flat-square)](https://github.com/Ridlo543/jev-judge/releases)
 [![Tests](https://img.shields.io/badge/Tests-Passing%20(29%2F29)-brightgreen?style=flat-square)](https://github.com/Ridlo543/jev-judge/actions)
 
-Model Context Protocol (MCP) server, CLI runner, and TypeScript SDK for **System One Decision Models** (**TypeSafe Jev** and **Laya**). Built for Claude Code, Oh My Pi (OMP), Cursor, Windsurf, Cline, and terminal workflows.
+Model Context Protocol (MCP) server, CLI runner, and TypeScript SDK for **System One Decision Models** (**Laya**, **Jev**, and OpenAI-compatible engines). Built for Claude Code, Oh My Pi (OMP), Cursor, Windsurf, Cline, and terminal workflows.
 
 Works with any OpenAI-compatible endpoint, direct TypeSafe decision gateway, or local offline CPU inference.
 
@@ -16,14 +16,14 @@ Works with any OpenAI-compatible endpoint, direct TypeSafe decision gateway, or 
 ### 1. Interactive Setup (Zero Install)
 Run the setup wizard to configure your agent automatically:
 ```bash
-npx -y github:Ridlo543/jev-judge setup
+npx -y systemone setup
 ```
 The wizard auto-detects Claude Code, Oh My Pi, Cursor, or local workspaces and configures the connection.
 
 ### 2. Run MCP Server Directly
 ```bash
 # In your .mcp.json or agent config:
-npx -y github:Ridlo543/jev-judge mcp
+npx -y systemone mcp
 ```
 
 ### 3. One-Liner System Install (Standalone Binaries)

@@ -294,42 +294,75 @@ export function formatToolResult(
 
   try {
     switch (toolName) {
+      case "systemone_judge":
+      case "judge":
       case "jev_judge":
         return formatJudgeResult(data, format);
+      case "systemone_judge_batch":
+      case "judge_batch":
       case "jev_judge_batch":
         return formatBatchJudgeResult(data);
+      case "systemone_noul":
+      case "noul":
       case "jev_noul":
         return formatNoulResult(data);
+      case "systemone_review":
+      case "review":
+      case "review_diff":
       case "jev_review":
       case "jev_review_patch":
         return formatReviewResult(data);
+      case "systemone_gate":
+      case "gate":
       case "jev_gate":
       case "jev_gate_acceptance":
         return formatGateResult(data);
+      case "systemone_action_gate":
+      case "action_gate":
+      case "screen_action":
       case "jev_action_gate":
       case "jev_gate_command":
         return formatActionGateResult(data);
+      case "systemone_decide":
+      case "decide":
       case "jev_decide":
       case "jev_arbitrate_decision":
         return formatDecideResult(data, format);
+      case "systemone_find":
+      case "find":
+      case "find_best":
       case "jev_find":
       case "jev_semantic_select":
         return formatFindResult(data);
+      case "systemone_rerank":
+      case "rerank":
       case "jev_rerank":
       case "jev_rank_relevance":
         return formatRerankResult(data);
+      case "systemone_compare":
+      case "compare":
+      case "compare_passages":
       case "jev_compare":
       case "jev_compare_passages":
         return formatCompareResult(data);
+      case "systemone_verify":
+      case "verify":
       case "jev_verify":
       case "jev_fact_check_citations":
         return formatVerifyResult(data);
+      case "systemone_screen":
+      case "screen":
+      case "screen_text":
       case "jev_screen":
       case "jev_screen_prompt_injection":
         return formatScreenResult(data);
+      case "systemone_extract":
+      case "extract":
       case "jev_extract":
       case "jev_extract_verbatim_regex":
         return formatExtractResult(data);
+      case "systemone_audit":
+      case "audit":
       case "jev_audit":
       case "jev_audit_extracted_records":
         return formatAuditResult(data);

@@ -211,19 +211,19 @@ export function requireConfig(explicit: JevConfigInput = {}): JevResolvedConfig 
 
   if (!config.baseUrl) {
     throw new Error(
-      "Missing Jev Base URL. Please configure it manually in your MCP config (env.JEV_BASE_URL or env.OPENAI_BASE_URL), in jev.config.json, pass --base-url, or use --laya for local server.",
+      "Missing SystemOne Base URL. Please configure it manually in your MCP config (env.SYSTEMONE_BASE_URL or env.JEV_BASE_URL), in systemone.config.json, pass --base-url, or use --laya for local server.",
     );
   }
 
   if (!config.apiKey) {
     throw new Error(
-      "Missing Jev API Key. Please configure it manually in your MCP config (env.JEV_API_KEY or env.OPENAI_API_KEY), in jev.config.json, or pass --api-key.",
+      "Missing SystemOne API Key. Please configure it manually in your MCP config (env.SYSTEMONE_API_KEY or env.JEV_API_KEY), in systemone.config.json, or pass --api-key.",
     );
   }
 
   if (!config.model) {
     throw new Error(
-      "Missing Jev Model. Please configure it manually in your MCP config (env.JEV_MODEL or env.OPENAI_MODEL), in jev.config.json, or pass --model.",
+      "Missing SystemOne Model. Please configure it manually in your MCP config (env.SYSTEMONE_MODEL or env.JEV_MODEL), in systemone.config.json, or pass --model.",
     );
   }
 

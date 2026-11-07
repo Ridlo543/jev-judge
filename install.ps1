@@ -4,21 +4,27 @@ $ErrorActionPreference = 'Stop'
 $Repo = "Ridlo543/jev-judge"
 $InstallDir = Join-Path $HOME "bin"
 
-Write-Host "=== Installing jev-judge (Universal Decision Runner & MCP) ===" -ForegroundColor Cyan
+Write-Host "=== Installing systemone (Universal Decision Runner & MCP) ===" -ForegroundColor Cyan
 
 if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
 
 $BaseUrl = "https://github.com/$Repo/releases/latest/download"
-$CliDest = Join-Path $InstallDir "jev.exe"
-$McpDest = Join-Path $InstallDir "jev-mcp.exe"
+$S1CliDest = Join-Path $InstallDir "systemone.exe"
+$S1McpDest = Join-Path $InstallDir "systemone-mcp.exe"
 
-Write-Host "Downloading jev-windows-x64.exe -> $CliDest..."
-Invoke-WebRequest -Uri "$BaseUrl/jev-windows-x64.exe" -OutFile $CliDest -UseBasicParsing
+Write-Host "Downloading systemone-windows-x64.exe -> $S1CliDest..."
+Invoke-WebRequest -Uri "$BaseUrl/jev-windows-x64.exe" -OutFile $S1CliDest -UseBasicParsing
 
-Write-Host "Downloading jev-mcp-windows-x64.exe -> $McpDest..."
-Invoke-WebRequest -Uri "$BaseUrl/jev-mcp-windows-x64.exe" -OutFile $McpDest -UseBasicParsing
+Write-Host "Downloading systemone-mcp-windows-x64.exe -> $S1McpDest..."
+Invoke-WebRequest -Uri "$BaseUrl/jev-mcp-windows-x64.exe" -OutFile $S1McpDest -UseBasicParsing
+
+# Create short alias 's1.exe' and backward-compatible 'jev.exe'
+Copy-Item -Path $S1CliDest -Destination (Join-Path $InstallDir "s1.exe") -Force
+Copy-Item -Path $S1CliDest -Destination (Join-Path $InstallDir "jev.exe") -Force
+Copy-Item -Path $S1McpDest -Destination (Join-Path $InstallDir "s1-mcp.exe") -Force
+Copy-Item -Path $S1McpDest -Destination (Join-Path $InstallDir "jev-mcp.exe") -Force
 
 # Check user PATH
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -28,7 +34,8 @@ if ($UserPath -notlike "*$InstallDir*") {
     $env:Path += ";$InstallDir"
 }
 
-Write-Host "`nSuccessfully installed jev and jev-mcp to $InstallDir!" -ForegroundColor Green
+Write-Host "`nSuccessfully installed systemone, s1, and jev to $InstallDir!" -ForegroundColor Green
 Write-Host "Test your installation:"
-Write-Host "  jev --help"
-Write-Host "  jev setup"
+Write-Host "  systemone --help"
+Write-Host "  s1 --help"
+Write-Host "  systemone setup"

@@ -119,13 +119,13 @@ function resolveConfig(explicit = {}) {
 function requireConfig(explicit = {}) {
   const config = resolveConfig(explicit);
   if (!config.baseUrl) {
-    throw new Error("Missing Jev Base URL. Please configure it manually in your MCP config (env.JEV_BASE_URL or env.OPENAI_BASE_URL), in jev.config.json, pass --base-url, or use --laya for local server.");
+    throw new Error("Missing SystemOne Base URL. Please configure it manually in your MCP config (env.SYSTEMONE_BASE_URL or env.JEV_BASE_URL), in systemone.config.json, pass --base-url, or use --laya for local server.");
   }
   if (!config.apiKey) {
-    throw new Error("Missing Jev API Key. Please configure it manually in your MCP config (env.JEV_API_KEY or env.OPENAI_API_KEY), in jev.config.json, or pass --api-key.");
+    throw new Error("Missing SystemOne API Key. Please configure it manually in your MCP config (env.SYSTEMONE_API_KEY or env.JEV_API_KEY), in systemone.config.json, or pass --api-key.");
   }
   if (!config.model) {
-    throw new Error("Missing Jev Model. Please configure it manually in your MCP config (env.JEV_MODEL or env.OPENAI_MODEL), in jev.config.json, or pass --model.");
+    throw new Error("Missing SystemOne Model. Please configure it manually in your MCP config (env.SYSTEMONE_MODEL or env.JEV_MODEL), in systemone.config.json, or pass --model.");
   }
   return config;
 }
@@ -716,42 +716,75 @@ function formatToolResult(toolName, data, format = "markdown") {
   }
   try {
     switch (toolName) {
+      case "systemone_judge":
+      case "judge":
       case "jev_judge":
         return formatJudgeResult(data, format);
+      case "systemone_judge_batch":
+      case "judge_batch":
       case "jev_judge_batch":
         return formatBatchJudgeResult(data);
+      case "systemone_noul":
+      case "noul":
       case "jev_noul":
         return formatNoulResult(data);
+      case "systemone_review":
+      case "review":
+      case "review_diff":
       case "jev_review":
       case "jev_review_patch":
         return formatReviewResult(data);
+      case "systemone_gate":
+      case "gate":
       case "jev_gate":
       case "jev_gate_acceptance":
         return formatGateResult(data);
+      case "systemone_action_gate":
+      case "action_gate":
+      case "screen_action":
       case "jev_action_gate":
       case "jev_gate_command":
         return formatActionGateResult(data);
+      case "systemone_decide":
+      case "decide":
       case "jev_decide":
       case "jev_arbitrate_decision":
         return formatDecideResult(data, format);
+      case "systemone_find":
+      case "find":
+      case "find_best":
       case "jev_find":
       case "jev_semantic_select":
         return formatFindResult(data);
+      case "systemone_rerank":
+      case "rerank":
       case "jev_rerank":
       case "jev_rank_relevance":
         return formatRerankResult(data);
+      case "systemone_compare":
+      case "compare":
+      case "compare_passages":
       case "jev_compare":
       case "jev_compare_passages":
         return formatCompareResult(data);
+      case "systemone_verify":
+      case "verify":
       case "jev_verify":
       case "jev_fact_check_citations":
         return formatVerifyResult(data);
+      case "systemone_screen":
+      case "screen":
+      case "screen_text":
       case "jev_screen":
       case "jev_screen_prompt_injection":
         return formatScreenResult(data);
+      case "systemone_extract":
+      case "extract":
       case "jev_extract":
       case "jev_extract_verbatim_regex":
         return formatExtractResult(data);
+      case "systemone_audit":
+      case "audit":
       case "jev_audit":
       case "jev_audit_extracted_records":
         return formatAuditResult(data);
@@ -3252,14 +3285,14 @@ var allTools = [
   ...primitiveTools
 ];
 var coreTools = [
-  allTools.find((t) => t.name === "jev_action_gate"),
-  allTools.find((t) => t.name === "jev_screen"),
-  allTools.find((t) => t.name === "jev_decide"),
-  allTools.find((t) => t.name === "jev_verify"),
-  allTools.find((t) => t.name === "jev_compare"),
-  allTools.find((t) => t.name === "jev_review"),
-  allTools.find((t) => t.name === "jev_find"),
-  allTools.find((t) => t.name === "jev_judge")
+  allTools.find((t) => t.name === "systemone_action_gate" || t.name === "jev_action_gate"),
+  allTools.find((t) => t.name === "systemone_screen" || t.name === "jev_screen"),
+  allTools.find((t) => t.name === "systemone_decide" || t.name === "jev_decide"),
+  allTools.find((t) => t.name === "systemone_verify" || t.name === "jev_verify"),
+  allTools.find((t) => t.name === "systemone_compare" || t.name === "jev_compare"),
+  allTools.find((t) => t.name === "systemone_review" || t.name === "jev_review"),
+  allTools.find((t) => t.name === "systemone_find" || t.name === "jev_find"),
+  allTools.find((t) => t.name === "systemone_judge" || t.name === "jev_judge")
 ];
 var toolsByName = {};
 for (const tool of allTools) {
@@ -3270,14 +3303,25 @@ for (const tool of allTools) {
     }
   }
 }
-if (toolsByName.jev_review && !toolsByName.jev_gate) {
-  toolsByName.jev_gate = toolsByName.jev_review;
-}
-if (toolsByName.jev_find && !toolsByName.jev_rerank) {
-  toolsByName.jev_rerank = toolsByName.jev_find;
-}
-if (toolsByName.jev_judge && !toolsByName.jev_noul) {
-  toolsByName.jev_noul = toolsByName.jev_judge;
+for (const [s1Name, jevName, cleanName] of [
+  ["systemone_review", "jev_review", "review"],
+  ["systemone_gate", "jev_gate", "gate"],
+  ["systemone_action_gate", "jev_action_gate", "action_gate"],
+  ["systemone_decide", "jev_decide", "decide"],
+  ["systemone_verify", "jev_verify", "verify"],
+  ["systemone_screen", "jev_screen", "screen"],
+  ["systemone_compare", "jev_compare", "compare"],
+  ["systemone_find", "jev_find", "find"],
+  ["systemone_rerank", "jev_rerank", "rerank"],
+  ["systemone_judge", "jev_judge", "judge"],
+  ["systemone_noul", "jev_noul", "noul"]
+]) {
+  const tool = toolsByName[s1Name] || toolsByName[jevName];
+  if (tool) {
+    toolsByName[s1Name] = tool;
+    toolsByName[jevName] = tool;
+    toolsByName[cleanName] = tool;
+  }
 }
 
 // node_modules/zod/v4/core/util.js
@@ -9051,6 +9095,38 @@ var judgeBatchSchema = object({
   _meta: unknown().optional()
 });
 var SCHEMAS_BY_TOOL_NAME = {
+  systemone_review: reviewSchema,
+  systemone_gate: gateSchema,
+  systemone_action_gate: actionGateSchema,
+  systemone_decide: decideSchema,
+  systemone_find: findSchema,
+  systemone_rerank: rerankSchema,
+  systemone_compare: compareSchema,
+  systemone_verify: verifySchema,
+  systemone_screen: screenSchema,
+  systemone_extract: extractSchema,
+  systemone_audit: auditSchema,
+  systemone_noul: noulSchema,
+  systemone_judge: judgeSchema,
+  systemone_judge_batch: judgeBatchSchema,
+  review: reviewSchema,
+  review_diff: reviewSchema,
+  gate: gateSchema,
+  action_gate: actionGateSchema,
+  screen_action: actionGateSchema,
+  decide: decideSchema,
+  find: findSchema,
+  find_best: findSchema,
+  rerank: rerankSchema,
+  compare: compareSchema,
+  verify: verifySchema,
+  screen: screenSchema,
+  screen_text: screenSchema,
+  extract: extractSchema,
+  audit: auditSchema,
+  judge: judgeSchema,
+  judge_batch: judgeBatchSchema,
+  noul: noulSchema,
   jev_review: reviewSchema,
   jev_review_patch: reviewSchema,
   jev_gate: gateSchema,
@@ -9142,7 +9218,7 @@ async function handleRequest(req) {
         tools: {}
       },
       serverInfo: {
-        name: "jev",
+        name: "systemone",
         version: "1.0.0"
       }
     });
@@ -9152,7 +9228,7 @@ async function handleRequest(req) {
     return;
   }
   if (method === "tools/list") {
-    const showAll = process.env.JEV_TOOLS === "all" || process.env.JEV_TOOLS === "14";
+    const showAll = process.env.SYSTEMONE_TOOLS === "all" || process.env.JEV_TOOLS === "all" || process.env.JEV_TOOLS === "14";
     const exposed = showAll ? allTools : coreTools;
     sendResult(id, {
       tools: exposed.map((t) => ({
@@ -9824,14 +9900,15 @@ var jevActionGateTool2 = {
 // src/cli.ts
 function printHelp() {
   console.log(`
-\x1B[1m\x1B[36mjev (Universal TypeSafe Jev Decision CLI)\x1B[0m
-Fast, calibrated decision model runner for coding gating, diff reviews, research decisions, and verification.
+\x1B[1m\x1B[36msystemone / s1 (Universal System One Decision Model CLI & MCP)\x1B[0m
+Fast, calibrated decision model runner (Laya, Jev, and OpenAI-Compatible) for coding gating, diff reviews, and verification.
 
 \x1B[1mUSAGE:\x1B[0m
-  jev <state> <question>                 Quick yes/no question
-  jev review --diff <file> --request <text>   Review git diff / patch quality
-  jev gate --diff <file> --request <text> --evidence <log> --claim <claim> Gating before done
-  jev [options]                          Advanced structured judgment
+  systemone <state> <question>                     Quick yes/no question
+  systemone review -f <file> --request <text>       Review git diff / patch quality
+  systemone gate -f <file> --evidence-file <log>   Gating before done (Anti-Fake Done)
+  systemone [options]                              Advanced structured judgment
+  (Aliases: 's1' and 'jev' are fully supported)
 
 \x1B[1mSUBCOMMANDS:\x1B[0m
   mcp                        Run as Model Context Protocol (MCP) JSON-RPC stdio server
